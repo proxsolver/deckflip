@@ -1,0 +1,1174 @@
+/* ========================================
+   복순도가 PPT - Part 1 v2 (BRANDED)
+   복순도가 공식 홈페이지(boksoon.com) 톤 차용
+   → Light Mode · Editorial · Minimalist Luxury
+   ======================================== */
+
+:root {
+  /* Background */
+  --bg-primary: #FFFFFF;
+  --bg-secondary: #F8F6F1;
+  --bg-tertiary: #F0EDE5;
+  --bg-dark: #1a1a1a;
+
+  /* Text */
+  --text-primary: #1a1a1a;
+  --text-secondary: #555555;
+  --text-muted: #999999;
+  --text-on-dark: #f5f3ee;
+
+  /* Accents (절제된 톤) */
+  --accent-ink: #000000;
+  --accent-gold: #8a7544;
+  --accent-gold-soft: #c2a878;
+  --accent-warm: #C19A6B;
+  --accent-red: #a52a2a;
+
+  /* Borders */
+  --border: #E5E1D8;
+  --border-strong: #B8B2A4;
+  --border-ink: #1a1a1a;
+
+  --slide-padding: 90px 130px;
+  --font-base: 'Pretendard', -apple-system, 'Helvetica Neue', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-base);
+  font-weight: 400;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.015em;
+}
+
+.presentation {
+  width: 100vw; height: 100vh;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+.presentation::-webkit-scrollbar { display: none; }
+
+.slide {
+  width: 100vw; height: 100vh;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  padding: var(--slide-padding);
+  position: relative;
+  display: flex; flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Header (절제된 미니멀) */
+.slide-header {
+  position: absolute; top: 56px; left: 130px; right: 130px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px; color: var(--text-muted);
+  letter-spacing: 0.2em; text-transform: uppercase;
+  font-weight: 500;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.slide-header .chapter-ko { color: var(--text-secondary); }
+.slide-header .chapter-en { color: var(--text-muted); font-style: italic; }
+
+.slide-footer {
+  position: absolute; bottom: 48px; left: 130px; right: 130px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 12px; color: var(--text-muted);
+  letter-spacing: 0.15em;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.slide-footer .page-num {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+/* 미묘한 골드 라인 (절제) */
+.accent-line {
+  width: 40px; height: 1px;
+  background: var(--accent-gold);
+  margin-bottom: 32px;
+}
+
+/* ===== ANIMATIONS ===== */
+.slide .anim {
+  opacity: 0; transform: translateY(24px);
+  transition: opacity 1.0s cubic-bezier(0.22, 1, 0.36, 1),
+              transform 1.0s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.slide.in-view .anim { opacity: 1; transform: translateY(0); }
+.slide.in-view .anim-1 { transition-delay: 0.15s; }
+.slide.in-view .anim-2 { transition-delay: 0.3s; }
+.slide.in-view .anim-3 { transition-delay: 0.45s; }
+.slide.in-view .anim-4 { transition-delay: 0.6s; }
+.slide.in-view .anim-5 { transition-delay: 0.75s; }
+.slide.in-view .anim-6 { transition-delay: 0.9s; }
+.slide.in-view .anim-7 { transition-delay: 1.05s; }
+.slide.in-view .anim-8 { transition-delay: 1.2s; }
+.slide.in-view .anim-9 { transition-delay: 1.35s; }
+
+/* ========================================
+   SLIDE 1: COVER (에디토리얼 표지)
+   ======================================== */
+.slide-cover {
+  background: var(--bg-primary);
+  text-align: center;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.slide-cover::before {
+  content: ''; position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 70%; height: 70%;
+  border: 1px solid var(--border);
+  pointer-events: none;
+}
+
+.cover-hanja {
+  font-size: 40px; color: var(--accent-gold);
+  letter-spacing: 0.5em; margin-bottom: 56px;
+  font-weight: 300;
+}
+
+.cover-title {
+  font-size: 200px; font-weight: 900;
+  line-height: 0.95; margin-bottom: 32px;
+  letter-spacing: -0.05em;
+  color: var(--accent-ink);
+}
+
+.cover-subtitle {
+  font-size: 28px;
+  font-weight: 300; color: var(--text-secondary);
+  margin-bottom: 24px; letter-spacing: 0.05em;
+}
+
+.cover-poetic {
+  font-size: 18px;
+  color: var(--text-muted);
+  font-style: italic;
+  letter-spacing: 0.05em;
+  margin-bottom: 80px;
+  max-width: 700px;
+  line-height: 1.6;
+}
+
+.cover-divider {
+  width: 60px; height: 1px;
+  background: var(--accent-gold);
+  margin: 0 auto 80px;
+}
+
+.cover-meta {
+  display: flex; gap: 80px;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.cover-meta-block { text-align: center; }
+.cover-meta-block .label {
+  font-size: 11px; color: var(--text-muted);
+  letter-spacing: 0.3em; text-transform: uppercase;
+  margin-bottom: 16px; font-weight: 600;
+}
+.cover-meta-block .value {
+  font-size: 16px; color: var(--text-primary);
+  font-weight: 500;
+}
+
+.cover-team-list {
+  display: flex; flex-direction: column; gap: 4px;
+  align-items: center;
+}
+.cover-team-list .member {
+  font-size: 14px; color: var(--text-secondary);
+}
+.cover-team-list .member.leader {
+  color: var(--accent-gold); font-weight: 600;
+}
+
+/* ========================================
+   SLIDE 2: CONTENTS (에디토리얼 목차)
+   ======================================== */
+.slide-contents {
+  padding-left: 200px;
+}
+
+.contents-eyebrow {
+  font-size: 13px; letter-spacing: 0.4em;
+  color: var(--accent-gold); text-transform: uppercase;
+  margin-bottom: 24px; font-weight: 600;
+}
+
+.contents-title {
+  font-size: 64px; font-weight: 900;
+  margin-bottom: 80px; letter-spacing: -0.04em;
+  color: var(--accent-ink);
+}
+
+.contents-list {
+  display: flex; flex-direction: column;
+  max-width: 1100px;
+}
+
+.contents-item {
+  display: grid; grid-template-columns: 80px 1fr auto;
+  gap: 40px; align-items: center;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--border);
+  transition: padding 0.3s ease;
+}
+.contents-item:hover { padding-left: 16px; }
+
+.contents-item .num {
+  font-size: 56px; font-weight: 900;
+  color: var(--accent-gold); line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+}
+
+.contents-item.dim .num { color: var(--border-strong); }
+
+.contents-item .info .title-ko {
+  font-size: 28px; font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 6px; letter-spacing: -0.02em;
+}
+.contents-item.dim .info .title-ko { color: var(--text-muted); }
+
+.contents-item .info .title-sub {
+  font-size: 15px; color: var(--text-secondary);
+  font-weight: 300; letter-spacing: 0.02em;
+}
+
+.contents-item .pages {
+  font-size: 12px; color: var(--text-muted);
+  letter-spacing: 0.2em; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ========================================
+   CHAPTER DIVIDER (미니멀 에디토리얼)
+   ======================================== */
+.slide-divider {
+  background: var(--bg-secondary);
+  padding-left: 200px;
+  position: relative;
+}
+.divider-bgnum {
+  position: absolute; right: 130px; top: 50%;
+  transform: translateY(-50%);
+  font-size: 500px; font-weight: 100;
+  color: rgba(138, 117, 68, 0.10);
+  line-height: 0.8; letter-spacing: -0.06em;
+  user-select: none;
+}
+.divider-eyebrow {
+  font-size: 13px; color: var(--accent-gold);
+  letter-spacing: 0.4em; text-transform: uppercase;
+  font-weight: 600; margin-bottom: 24px;
+}
+.divider-num {
+  font-size: 72px; font-weight: 300;
+  color: var(--accent-gold); line-height: 1; margin-bottom: 32px;
+  font-variant-numeric: tabular-nums;
+}
+.divider-title {
+  font-size: 88px; font-weight: 900;
+  letter-spacing: -0.04em; margin-bottom: 32px;
+  line-height: 1.05;
+  color: var(--accent-ink);
+}
+.divider-title .en {
+  display: block; font-size: 32px;
+  color: var(--text-secondary);
+  font-weight: 300; font-style: italic;
+  letter-spacing: -0.02em; margin-top: 12px;
+}
+.divider-subtitle {
+  font-size: 22px; color: var(--text-secondary);
+  font-weight: 300; max-width: 600px;
+  line-height: 1.6; font-style: italic;
+  letter-spacing: 0.02em;
+}
+
+.divider-nav {
+  position: absolute; bottom: 100px; left: 200px;
+  display: flex; gap: 40px;
+}
+.divider-nav-item {
+  font-size: 12px; color: var(--text-muted);
+  letter-spacing: 0.15em;
+}
+.divider-nav-item .nav-num {
+  color: var(--text-secondary);
+  font-weight: 700; margin-right: 8px;
+}
+.divider-nav-item.active .nav-num,
+.divider-nav-item.active {
+  color: var(--accent-gold);
+}
+
+/* ========================================
+   COMMON SLIDE TITLES
+   ======================================== */
+.slide-eyebrow {
+  font-size: 12px; letter-spacing: 0.4em;
+  color: var(--accent-gold); text-transform: uppercase;
+  margin-bottom: 16px; font-weight: 600;
+}
+
+.slide-title {
+  font-size: 48px; font-weight: 900;
+  margin-bottom: 16px;
+  letter-spacing: -0.03em; line-height: 1.15;
+  color: var(--accent-ink);
+}
+
+.slide-subtitle {
+  font-size: 18px; color: var(--text-secondary);
+  margin-bottom: 56px; font-weight: 300;
+  line-height: 1.6; max-width: 900px;
+  letter-spacing: 0.01em;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: center;
+  flex: 1;
+}
+
+/* ========================================
+   SLIDE 1-1: 기업 개요 (에디토리얼 표)
+   ======================================== */
+.info-grid {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 24px 40px;
+  font-size: 17px;
+}
+
+.info-grid .label {
+  color: var(--text-muted);
+  font-weight: 500;
+  padding-top: 4px;
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.info-grid .value {
+  color: var(--text-primary);
+  font-weight: 500;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.info-grid .value strong {
+  color: var(--accent-gold);
+  font-weight: 700;
+}
+
+.hanja-display-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  padding: 60px 40px;
+  text-align: center;
+}
+
+.hanja-display {
+  font-size: 140px;
+  font-weight: 300;
+  color: var(--accent-ink);
+  letter-spacing: 0.1em;
+  line-height: 1;
+  margin-bottom: 32px;
+}
+
+.hanja-meaning {
+  font-size: 16px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+  letter-spacing: 0.02em;
+}
+.hanja-meaning .highlight {
+  color: var(--accent-gold);
+  font-weight: 700;
+}
+.hanja-meaning .poetic {
+  display: block; margin-top: 20px;
+  padding-top: 20px; border-top: 1px solid var(--border-strong);
+  font-style: italic; color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* ========================================
+   SLIDE 1-2: 창업 스토리
+   ======================================== */
+.story-timeline {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0; margin-top: 32px; flex: 1;
+  position: relative;
+}
+
+.story-step {
+  padding: 0 32px;
+  border-left: 1px solid var(--border);
+  position: relative;
+}
+.story-step:first-child { border-left: none; padding-left: 0; }
+
+.story-step .step-marker {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent-gold);
+  margin-bottom: 32px;
+}
+
+.story-step .step-era {
+  font-size: 11px; color: var(--accent-gold);
+  letter-spacing: 0.25em; text-transform: uppercase;
+  font-weight: 600; margin-bottom: 16px;
+}
+
+.story-step .step-title {
+  font-size: 24px; font-weight: 800;
+  margin-bottom: 16px; letter-spacing: -0.02em;
+  color: var(--accent-ink); line-height: 1.2;
+}
+
+.story-step .step-desc {
+  font-size: 15px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.story-quote {
+  margin-top: 64px;
+  padding: 48px 60px;
+  background: var(--bg-secondary);
+  border-left: 2px solid var(--accent-red);
+  font-size: 24px;
+  font-weight: 300;
+  font-style: italic;
+  color: var(--text-primary);
+  line-height: 1.6;
+  letter-spacing: -0.01em;
+}
+.story-quote strong {
+  color: var(--accent-red);
+  font-weight: 600;
+}
+.story-quote cite {
+  display: block; margin-top: 20px;
+  font-size: 13px; color: var(--text-muted);
+  font-style: normal; letter-spacing: 0.15em;
+  text-transform: uppercase;
+}
+
+/* ========================================
+   SLIDE 1-3: 가족 거버넌스
+   ======================================== */
+.family-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px; margin-top: 40px;
+}
+
+.family-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  padding: 48px 36px;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.family-card.highlight {
+  background: var(--bg-dark);
+  border-color: var(--bg-dark);
+  color: var(--text-on-dark);
+}
+
+.family-card .avatar {
+  width: 64px; height: 64px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  margin-bottom: 28px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; color: var(--accent-gold);
+  font-weight: 300;
+  border: 1px solid var(--border);
+}
+.family-card.highlight .avatar {
+  background: rgba(255,255,255,0.05);
+  border-color: var(--accent-gold-soft);
+  color: var(--accent-gold-soft);
+}
+
+.family-card .relation {
+  font-size: 11px;
+  color: var(--accent-gold);
+  letter-spacing: 0.25em; text-transform: uppercase;
+  margin-bottom: 12px; font-weight: 600;
+}
+.family-card.highlight .relation { color: var(--accent-gold-soft); }
+
+.family-card .name {
+  font-size: 28px; font-weight: 800;
+  margin-bottom: 8px; letter-spacing: -0.02em;
+}
+
+.family-card .birth {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 28px;
+  letter-spacing: 0.05em;
+}
+.family-card.highlight .birth { color: rgba(255,255,255,0.5); }
+
+.family-card .role {
+  font-size: 16px;
+  color: var(--text-primary);
+  font-weight: 600;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+.family-card.highlight .role { color: var(--text-on-dark); }
+
+.family-card .edu {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.family-card.highlight .edu { color: rgba(255,255,255,0.7); }
+
+/* ========================================
+   SLIDE 1-4: 김민규 대표
+   ======================================== */
+.ceo-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 80px;
+  align-items: center;
+  flex: 1;
+}
+
+.ceo-info .ceo-name {
+  font-size: 88px; font-weight: 900;
+  letter-spacing: -0.04em; line-height: 1;
+  margin-bottom: 12px;
+  color: var(--accent-ink);
+}
+.ceo-info .ceo-name-en {
+  font-size: 14px; color: var(--text-muted);
+  letter-spacing: 0.25em;
+  margin-bottom: 48px; font-weight: 500;
+}
+
+.ceo-meta {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 16px 32px;
+  margin-bottom: 48px;
+  font-size: 15px;
+}
+.ceo-meta .label {
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding-top: 4px;
+}
+.ceo-meta .value {
+  color: var(--text-primary);
+  line-height: 1.5;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.ceo-meta .value strong {
+  color: var(--accent-gold);
+  font-weight: 700;
+}
+
+.ceo-quote {
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+  color: var(--accent-ink);
+  border-left: 2px solid var(--accent-gold);
+  padding-left: 32px;
+  font-style: italic;
+}
+.ceo-quote-source {
+  display: block; margin-top: 16px;
+  font-size: 12px; color: var(--text-muted);
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  font-style: normal;
+}
+
+.ceo-thesis-card {
+  background: var(--bg-dark);
+  color: var(--text-on-dark);
+  padding: 64px 56px;
+  position: relative;
+}
+.ceo-thesis-card .label {
+  font-size: 11px;
+  color: var(--accent-gold-soft);
+  letter-spacing: 0.3em; text-transform: uppercase;
+  margin-bottom: 24px; font-weight: 600;
+}
+.ceo-thesis-card .thesis-title {
+  font-size: 48px; font-weight: 900;
+  letter-spacing: -0.03em; line-height: 1.1;
+  margin-bottom: 24px;
+}
+.ceo-thesis-card .thesis-title .ko {
+  display: block; color: var(--accent-gold-soft);
+  font-size: 28px; margin-top: 8px; font-weight: 600;
+}
+.ceo-thesis-card .thesis-desc {
+  font-size: 15px;
+  color: rgba(255,255,255,0.75);
+  line-height: 1.7;
+  padding-top: 24px;
+  border-top: 1px solid rgba(255,255,255,0.15);
+}
+.ceo-thesis-card .thesis-desc strong {
+  color: var(--accent-gold-soft);
+  font-weight: 600;
+}
+
+/* ========================================
+   SLIDE 1-5: 발효건축 (Three.js)
+   ======================================== */
+.brewery-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 60px; flex: 1; align-items: center;
+}
+
+#three-canvas-container {
+  width: 100%; height: 65vh;
+  position: relative;
+  background: var(--bg-secondary);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+#three-canvas-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.three-label {
+  position: absolute;
+  bottom: 24px; left: 24px;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.25em; text-transform: uppercase;
+  z-index: 2;
+}
+
+.brewery-detail {
+  display: flex; flex-direction: column;
+  gap: 28px;
+}
+
+.brewery-detail-item {
+  border-left: 1px solid var(--accent-gold-soft);
+  padding-left: 24px;
+}
+
+.brewery-detail-item .area {
+  font-size: 11px; color: var(--accent-gold);
+  letter-spacing: 0.25em; text-transform: uppercase;
+  margin-bottom: 8px; font-weight: 600;
+}
+.brewery-detail-item .desc {
+  font-size: 16px;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+.brewery-detail-item .desc strong {
+  color: var(--accent-gold);
+  font-weight: 700;
+}
+
+.brewery-correction {
+  margin-top: 16px;
+  padding: 18px 24px;
+  background: var(--bg-secondary);
+  border-left: 2px solid var(--accent-red);
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-style: italic;
+}
+.brewery-correction strong {
+  color: var(--accent-red);
+  font-weight: 700;
+  font-style: normal;
+}
+
+/* ========================================
+   SLIDE 1-6: 회사 연혁
+   ======================================== */
+.history-timeline {
+  position: relative;
+  margin-top: 40px; padding: 60px 0;
+  flex: 1;
+  display: flex; align-items: center;
+}
+
+.history-line {
+  position: absolute;
+  top: 50%; left: 0; right: 0;
+  height: 1px;
+  background: var(--border-strong);
+  transform: translateY(-50%);
+}
+.history-line::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  height: 100%; width: 100%;
+  background: var(--accent-gold);
+  transform-origin: left;
+  transform: scaleX(0);
+  transition: transform 2.5s ease 0.5s;
+}
+.slide.in-view .history-line::before { transform: scaleX(1); }
+
+.history-events {
+  display: flex; justify-content: space-between;
+  width: 100%; position: relative;
+}
+
+.history-event {
+  flex: 1; text-align: center;
+  position: relative;
+}
+
+.history-event .dot {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--accent-gold);
+  margin: 0 auto;
+  position: relative; z-index: 2;
+  box-shadow: 0 0 0 4px var(--bg-primary);
+}
+.history-event.major .dot {
+  width: 18px; height: 18px;
+  background: var(--accent-ink);
+}
+
+.history-event .year {
+  font-size: 26px; font-weight: 800;
+  color: var(--accent-ink);
+  margin-top: 56px; margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.history-event.major .year { color: var(--accent-gold); font-size: 30px; }
+
+.history-event .label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5; max-width: 140px;
+  margin: 0 auto;
+  letter-spacing: 0.02em;
+}
+.history-event.major .label { color: var(--text-primary); font-weight: 600; }
+
+.history-event.up .year { margin-top: -120px; }
+.history-event.up .label { margin-top: 0; margin-bottom: 24px; }
+.history-event.up { display: flex; flex-direction: column-reverse; justify-content: flex-end; }
+
+/* ========================================
+   SLIDE 2-1: 제품 라인업
+   ======================================== */
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px; margin-top: 32px; flex: 1;
+}
+
+.product-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  padding: 32px 28px;
+  display: flex; flex-direction: column;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.product-card.signature {
+  background: var(--bg-secondary);
+  border-color: var(--accent-gold);
+}
+
+.product-card.new {
+  border-color: var(--accent-red);
+}
+.product-card.new::after {
+  content: 'NEW';
+  position: absolute; top: 16px; right: 16px;
+  background: var(--accent-red);
+  color: white;
+  font-size: 9px; font-weight: 700;
+  padding: 3px 8px;
+  letter-spacing: 0.2em;
+}
+
+.product-card .product-cat {
+  font-size: 11px;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  font-weight: 600;
+}
+
+.product-card .product-name {
+  font-size: 24px;
+  font-weight: 800;
+  margin-bottom: 16px;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--accent-ink);
+}
+
+.product-card .product-specs {
+  display: flex; gap: 16px;
+  margin-bottom: 24px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.product-card .product-specs strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.product-card .product-price {
+  margin-top: auto;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--accent-gold);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ========================================
+   SLIDE 2-2: 재무 (Chart.js)
+   ======================================== */
+.finance-layout {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 56px; flex: 1; align-items: center;
+}
+
+.chart-container {
+  width: 100%; height: 55vh;
+  position: relative;
+  background: var(--bg-secondary);
+  padding: 40px;
+  border: 1px solid var(--border);
+}
+
+.finance-insights {
+  display: flex; flex-direction: column; gap: 24px;
+}
+
+.kpi-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  padding: 32px;
+}
+.kpi-card.gold {
+  background: var(--bg-secondary);
+  border-color: var(--accent-gold);
+}
+.kpi-card .kpi-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  margin-bottom: 16px;
+  font-weight: 600;
+}
+.kpi-card .kpi-value {
+  font-size: 56px; font-weight: 900;
+  color: var(--accent-gold);
+  line-height: 1; letter-spacing: -0.04em;
+  margin-bottom: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-card .kpi-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+/* ========================================
+   SLIDE 2-3: 광고비 0 (Hero · 시적 톤)
+   ======================================== */
+.zero-message {
+  text-align: center; flex: 1;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+
+.zero-hanja {
+  font-size: 32px;
+  color: var(--accent-gold);
+  letter-spacing: 0.4em;
+  margin-bottom: 40px;
+  font-weight: 300;
+}
+
+.zero-eyebrow {
+  font-size: 13px;
+  letter-spacing: 0.4em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 48px;
+  font-weight: 600;
+}
+
+.zero-headline {
+  font-size: 260px; font-weight: 100;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: var(--accent-ink);
+  margin-bottom: 24px;
+  font-variant-numeric: tabular-nums;
+}
+
+.zero-subtitle {
+  font-size: 24px;
+  color: var(--text-secondary);
+  font-weight: 300;
+  margin-bottom: 80px;
+  letter-spacing: 0.05em;
+  font-style: italic;
+}
+
+.zero-quote {
+  max-width: 800px;
+  font-size: 24px;
+  font-style: italic;
+  font-weight: 300;
+  color: var(--accent-ink);
+  line-height: 1.6;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 40px 0;
+  letter-spacing: -0.01em;
+}
+.zero-quote strong {
+  color: var(--accent-gold);
+  font-weight: 700;
+  font-style: normal;
+}
+.zero-quote cite {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 24px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+/* ========================================
+   SLIDE 2-4: SWOT
+   ======================================== */
+.swot-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 16px; margin-top: 32px; flex: 1;
+}
+
+.swot-cell {
+  padding: 32px 36px;
+  position: relative;
+  display: flex; flex-direction: column;
+  background: var(--bg-primary);
+}
+
+.swot-cell.s { background: var(--bg-secondary); border: 1px solid var(--accent-gold-soft); }
+.swot-cell.w { background: var(--bg-secondary); border: 1px solid var(--accent-red); }
+.swot-cell.o { background: var(--bg-primary); border: 1px solid var(--border); }
+.swot-cell.t { background: var(--bg-primary); border: 1px solid var(--border); }
+
+.swot-cell .letter {
+  font-size: 48px; font-weight: 100;
+  line-height: 1; margin-bottom: 4px;
+  letter-spacing: -0.02em;
+}
+.swot-cell.s .letter, .swot-cell.o .letter { color: var(--accent-gold); }
+.swot-cell.w .letter, .swot-cell.t .letter { color: var(--accent-red); }
+
+.swot-cell .name {
+  font-size: 18px;
+  font-weight: 800;
+  margin-bottom: 20px;
+  letter-spacing: -0.01em;
+  color: var(--accent-ink);
+}
+
+.swot-cell ul {
+  list-style: none;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.swot-cell li {
+  font-size: 14px;
+  color: var(--text-secondary);
+  padding-left: 16px; position: relative;
+  line-height: 1.5;
+}
+.swot-cell li::before {
+  content: '—';
+  position: absolute; left: 0;
+  color: var(--accent-gold);
+  font-weight: 700;
+}
+.swot-cell.w li::before,
+.swot-cell.t li::before { color: var(--accent-red); }
+
+/* ========================================
+   SLIDE 15: PART 1 마무리 (Transition)
+   ======================================== */
+.transition-slide {
+  text-align: center;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  flex: 1;
+  background: var(--bg-secondary);
+  position: relative;
+}
+.transition-slide::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 70%; height: 70%;
+  border: 1px solid var(--border-strong);
+  pointer-events: none;
+}
+
+.transition-prefix {
+  font-size: 13px;
+  letter-spacing: 0.4em;
+  color: var(--accent-gold);
+  text-transform: uppercase;
+  margin-bottom: 40px;
+  font-weight: 600;
+  position: relative; z-index: 1;
+}
+
+.transition-headline {
+  font-size: 72px;
+  font-weight: 300;
+  line-height: 1.25;
+  letter-spacing: -0.03em;
+  max-width: 1100px;
+  margin-bottom: 64px;
+  color: var(--accent-ink);
+  position: relative; z-index: 1;
+  font-style: italic;
+}
+.transition-headline .highlight {
+  color: var(--accent-gold);
+  font-weight: 800;
+  font-style: normal;
+}
+
+.transition-next {
+  font-size: 16px;
+  color: var(--text-secondary);
+  font-weight: 400;
+  letter-spacing: 0.15em;
+  position: relative; z-index: 1;
+}
+.transition-next .arrow {
+  color: var(--accent-gold);
+  margin-right: 16px;
+}
+
+/* ========================================
+   GLOBAL UI (라이트 모드)
+   ======================================== */
+.progress-bar {
+  position: fixed; top: 0; left: 0;
+  width: 100%; height: 2px;
+  background: var(--border);
+  z-index: 100;
+}
+.progress-bar .progress {
+  height: 100%;
+  background: var(--accent-gold);
+  width: 0%;
+  transition: width 0.4s ease;
+}
+
+.slide-indicator {
+  position: fixed;
+  bottom: 30px; right: 40px;
+  font-size: 12px;
+  color: var(--text-muted);
+  letter-spacing: 0.2em;
+  font-variant-numeric: tabular-nums;
+  z-index: 100;
+  background: rgba(255,255,255,0.9);
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+}
+.slide-indicator .current {
+  color: var(--accent-gold);
+  font-weight: 700;
+}
+
+.nav-hint {
+  position: fixed;
+  bottom: 30px; left: 40px;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.2em;
+  z-index: 100;
+  opacity: 0.7;
+}
+.nav-hint kbd {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 10px;
+  margin: 0 2px;
+  color: var(--text-primary);
+}

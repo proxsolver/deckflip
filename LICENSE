@@ -1,0 +1,47 @@
+Slidesmith — Proprietary Software License
+Copyright (c) 2026 Jaewoong Hwang. All rights reserved.
+
+1. Ownership
+   This software, including its source code, design, documentation, and all
+   associated materials in this repository (the "Software"), is the proprietary
+   and confidential property of Jaewoong Hwang ("the Owner"). The Software is
+   protected by copyright and other intellectual-property laws and treaties.
+
+2. No license granted
+   No license or right of any kind is granted, expressly or by implication, to
+   any person or entity obtaining or viewing a copy of the Software. In
+   particular, you MAY NOT, in whole or in part, use, copy, reproduce, modify,
+   adapt, translate, merge, publish, distribute, sublicense, sell, rent, lease,
+   host as a service, reverse engineer, or create derivative works from the
+   Software without the prior, express, written permission of the Owner.
+
+3. No implied rights from access
+   The Software may be made visible (for example, through a public source-code
+   repository) for reference, evaluation, or transparency only. Being able to
+   view or download the Software does NOT grant any license to use it, and does
+   not place it in the public domain or under any open-source license.
+
+4. Third-party components
+   The Software incorporates third-party open-source libraries (for example,
+   React, Vite, and other dependencies declared in package.json), each of which
+   remains licensed under its own respective terms. This license applies only to
+   the original work authored by the Owner and not to those third-party
+   components. Likewise, any example or sample content included for
+   demonstration purposes may be owned by its respective rights holders.
+
+5. Reservation of rights
+   All rights not expressly granted in writing by the Owner are reserved. To
+   request a license or permission, contact the Owner.
+
+6. Disclaimer of warranty
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+7. Limitation of liability
+   IN NO EVENT SHALL THE OWNER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+   OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+Contact: jwhwang91@gmail.com

@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TESLA — Accelerating the Transition to Sustainable Energy</title>
+
+  <!-- ============ FONT: Pretendard (CDN) ============ -->
+  <link rel="stylesheet" as="style" crossorigin
+        href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+
+  <!-- ============ STYLES ============ -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ============================================================
+       GLOBAL 3D BACKGROUND (Three.js renders here)
+  ============================================================= -->
+  <div id="bg-layer">
+    <canvas id="bg-canvas"></canvas>
+  </div>
+
+  <!-- Ambient decorative layers -->
+  <div class="glow glow--a" aria-hidden="true"></div>
+  <div class="glow glow--b" aria-hidden="true"></div>
+  <div class="grid-overlay" aria-hidden="true"></div>
+  <div class="noise" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <!-- ============================================================
+       HEADS-UP DISPLAY (progress, brand, counter)
+  ============================================================= -->
+  <header class="hud" aria-hidden="true">
+    <div class="hud__bar"><span id="progress" class="hud__progress"></span></div>
+    <div class="hud__row">
+      <div class="hud__brand">
+        <svg class="t-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 5.362l2.475-3.026s4.245.09 8.471 2.054c-1.082 1.636-3.231 2.438-3.231 2.438-.146-1.439-1.154-1.79-4.354-1.79L12 24 8.619 5.034c-3.18 0-4.211.354-4.358 1.794 0 0-2.149-.807-3.231-2.443C5.255 2.421 9.5 2.331 9.5 2.331L12 5.362z"/>
+        </svg>
+        <span class="hud__wordmark">TESLA</span>
+        <span class="hud__divider"></span>
+        <span id="hud-section" class="hud__section">Introduction</span>
+      </div>
+      <div class="hud__counter">
+        <span id="counter-current">01</span><span class="hud__slash">/</span><span id="counter-total">30</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Dot navigation -->
+  <nav id="dots" class="dots" aria-label="Slide navigation"></nav>
+
+  <!-- Prev / Next controls -->
+  <button id="prev" class="navarrow navarrow--prev" aria-label="Previous slide">
+    <svg viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg>
+  </button>
+  <button id="next" class="navarrow navarrow--next" aria-label="Next slide">
+    <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
+
+  <!-- Scroll hint -->
+  <div id="scroll-hint" class="scroll-hint" aria-hidden="true">
+    <span>Scroll&nbsp;·&nbsp;Arrow keys&nbsp;·&nbsp;Space</span>
+    <svg viewBox="0 0 24 24"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+  </div>
+
+  <!-- ============================================================
+       THE DECK
+  ============================================================= -->
+  <main id="deck" class="deck">
+
+    <!-- ============ 01 · TITLE ============ -->
+    <section class="slide slide--hero" data-bg="hero" data-theme="blue" data-section="Introduction">
+      <div class="slide__inner hero">
+        <span class="eyebrow hero__eyebrow" data-animate>Founded 2003 · Palo Alto / Austin</span>
+        <h1 class="hero__title" data-animate>
+          <span class="hero__word">TESLA</span>
+        </h1>
+        <p class="hero__lead" data-animate>
+          Accelerating the world's transition to <span class="grad">sustainable energy</span>.
+        </p>
+        <div class="hero__meta" data-animate>
+          <span>Electric Vehicles</span><i></i><span>Autonomy &amp; AI</span><i></i><span>Energy &amp; Storage</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 02 · AGENDA ============ -->
+    <section class="slide" data-bg="calm" data-theme="blue" data-section="Introduction">
+      <div class="slide__inner">
+        <header class="slide__head">
+          <span class="eyebrow" data-animate>Agenda</span>
+          <h2 class="slide__title" data-animate>What we'll cover</h2>
+        </header>
+        <div class="chapters">
+          <article class="chapter glass" data-animate>
+            <span class="chapter__num">01</span>
+            <h3>Company &amp; Mission</h3>
+            <p>Origin, master plan, and the numbers behind the movement.</p>
+          </article>
+          <article class="chapter glass" data-animate>
+            <span class="chapter__num">02</span>
+            <h3>Core Technology</h3>
+            <p>Batteries, powertrain, and vertically-integrated manufacturing.</p>
+          </article>
+          <article class="chapter glass" data-animate>
+            <span class="chapter__num">03</span>
+            <h3>The Fleet</h3>
+            <p>From Model 3 to Cybertruck — the full vehicle range.</p>
+          </article>
+          <article class="chapter glass" data-animate>
+            <span class="chapter__num">04</span>
+            <h3>Autonomy &amp; AI</h3>
+            <p>Full Self-Driving, Cybercab, Dojo, and the Optimus robot.</p>
+          </article>
+          <article class="chapter glass" data-animate>
+            <span class="chapter__num">05</span>
+            <h3>Energy</h3>
+            <p>Powerwall, Megapack, Solar, and the Supercharger grid.</p>
+          </article>
+          <article class="chapter glass" data-animate>
+            <span class="chapter__num">06</span>
+            <h3>Impact &amp; Vision</h3>
+            <p>Sustainability outcomes and the road ahead.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 03 · SECTION DIVIDER 01 ============ -->
+    <section class="slide slide--divider" data-bg="section" data-theme="blue" data-section="Company &amp; Mission">
+      <div class="slide__inner divider">
+        <span class="divider__num" data-animate>01</span>
+        <h2 class="divider__title" data-animate>Company &amp; Mission</h2>
+        <p class="divider__sub" data-animate>Why Tesla exists, and the trajectory that got it here.</p>
+      </div>
+    </section>
+
+    <!-- ============ 04 · MISSION ============ -->
+    <section class="slide" data-bg="calm" data-theme="blue" data-section="Company &amp; Mission">
+      <div class="slide__inner statement">
+        <span class="eyebrow" data-animate>The Mission</span>
+        <p class="statement__text" data-animate>
+          To <span class="grad">accelerate</span> the world's transition to sustainable energy —
+          not one product, but an <span class="grad">entire ecosystem</span> of generation,
+          storage, and transport.
+        </p>
+        <div class="statement__by" data-animate>— Tesla, Inc.</div>
+      </div>
+    </section>
+
+    <!-- ============ 05 · TIMELINE ============ -->
+    <section class="slide" data-bg="calm" data-theme="blue" data-section="Company &amp; Mission">
+      <div class="slide__inner">
+        <header class="slide__head">
+          <span class="eyebrow" data-animate>1995 → Today</span>
+          <h2 class="slide__title" data-animate>Two decades of acceleration</h2>
+        </header>
+        <ol class="timeline">
+          <li class="timeline__item glass" data-animate>
+            <span class="timeline__year">2003</span>
+            <p>Tesla Motors founded with a single belief: EVs can beat gas cars.</p>
+          </li>
+          <li class="timeline__item glass" data-animate>
+            <span class="timeline__year">2008</span>
+            <p>The Roadster proves electric can be fast, desirable, and real.</p>
+          </li>
+          <li class="timeline__item glass" data-animate>
+            <span class="timeline__year">2012</span>
+            <p>Model S redefines the premium sedan and launches Supercharging.</p>
+          </li>
+          <li class="timeline__item glass" data-animate>
+            <span class="timeline__year">2017</span>
+            <p>Model 3 brings the mission to the mass market at scale.</p>
+          </li>
+          <li class="timeline__item glass" data-animate>
+            <span class="timeline__year">2023</span>
+            <p>Cybertruck enters production; the fleet crosses 5M cars built.</p>
+          </li>
+          <li class="timeline__item glass" data-animate>
+            <span class="timeline__year">2026</span>
+            <p>Robotaxi scales and Optimus moves from prototype to product.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- ============ 06 · BY THE NUMBERS (Chart.js) ============ -->
+    <section class="slide" data-bg="calm" data-theme="blue" data-section="Company &amp; Mission">
+      <div class="slide__inner split">
+        <div class="split__text">
+          <header class="slide__head">
+            <span class="eyebrow" data-animate>By the Numbers</span>
+            <h2 class="slide__title" data-animate>Exponential by design</h2>
+          </header>
+          <div class="stat-row" data-animate>
+            <div class="stat">
+              <span class="stat__num"><span data-count="8" data-suffix="M+"></span></span>
+              <span class="stat__label">Vehicles delivered, cumulative</span>
+            </div>
+            <div class="stat">
+              <span class="stat__num"><span data-count="6.7" data-decimals="1" data-suffix=" TWh"></span></span>
+              <span class="stat__label">Charged by Superchargers in 2025</span>
+            </div>
+          </div>
+          <p class="split__note" data-animate>Annual vehicle deliveries, 2016 – 2025 <em>(2025 est.)</em></p>
+        </div>
+        <div class="split__visual" data-animate>
+          <div class="chart-card glass">
+            <canvas id="chart-deliveries"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 07 · SECTION DIVIDER 02 ============ -->
+    <section class="slide slide--divider" data-bg="section" data-theme="cyan" data-section="Core Technology">
+      <div class="slide__inner divider">
+        <span class="divider__num" data-animate>02</span>
+        <h2 class="divider__title" data-animate>Core Technology</h2>
+        <p class="divider__sub" data-animate>The engineering stack beneath every Tesla.</p>
+      </div>
+    </section>
+
+    <!-- ============ 08 · CORE TECH (3D feature) ============ -->
+    <section class="slide slide--tech" data-bg="techFocus" data-theme="cyan" data-section="Core Technology">
+      <div class="slide__inner split split--wide">
+        <div class="split__text">
+          <header class="slide__head">
+            <span class="eyebrow" data-animate>Vertical Integration</span>
+            <h2 class="slide__title" data-animate>One stack,<br/>built in-house</h2>
+          </header>
+          <ul class="feature-list">
+            <li data-animate><strong>Cells &amp; packs</strong> — chemistry, structural batteries, the 4680.</li>
+            <li data-animate><strong>Powertrain</strong> — motors, inverters, and 800-volt architecture.</li>
+            <li data-animate><strong>Software</strong> — one OS, improved over the air, for the life of the car.</li>
+            <li data-animate><strong>Silicon &amp; AI</strong> — custom chips for inference and training.</li>
+          </ul>
+        </div>
+        <div class="split__visual split__visual--3d" data-animate>
+          <!-- The global Three.js scene focuses its icosahedron here -->
+          <div class="orbit-caption glass">Interactive · drag your cursor</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 09 · BATTERY & POWERTRAIN ============ -->
+    <section class="slide" data-bg="tech" data-theme="cyan" data-section="Core Technology">
+      <div class="slide__inner">
+        <header class="slide__head">
+          <span class="eyebrow" data-animate>Battery &amp; Powertrain</span>
+          <h2 class="slide__title" data-animate>Energy density, perfected</h2>
+        </header>
+        <div class="cards-3">
+          <article class="card glass" data-animate>
+            <div class="card__icon">
+              <svg viewBox="0 0 24 24"><path d="M7 7h10v10H7zM4 10v4M20 10v4"/></svg>
+            </div>
+            <h3>4680 Cell</h3>
+            <p>A larger tabless cell — more energy, more power, lower cost per kWh.</p>
+          </article>
+          <article class="card glass" data-animate>
+            <div class="card__icon">
+              <svg viewBox="0 0 24 24"><path d="M3 12h6l2-6 4 12 2-6h4"/></svg>
+            </div>
+            <h3>Structural Pack</h3>
+            <p>The battery is the chassis — fewer parts, more rigidity, lighter mass.</p>
+          </article>
+          <article class="card glass" data-animate>
+            <div class="card__icon">
+              <svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg>
+            </div>
+            <h3>Drive Units</h3>
+            <p>Compact permanent-magnet and induction motors, up to a tri-motor Plaid.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 10 · MANUFACTURING ============ -->
+    <section class="slide" data-bg="tech" data-theme="cyan" data-section="Core Technology">
+      <div class="slide__inner split">
+        <div class="split__text">
+          <header class="slide__head">
+            <span class="eyebrow" data-animate>Gigafactory</span>
+            <h2 class="slide__title" data-animate>The machine that builds the machine</h2>
+          </header>
+          <p class="lead" data-animate>
+            Giga-casting replaces dozens of stamped parts with a single piece. Unboxed
+            assembly builds sub-modules in parallel, then snaps them together.
+          </p>
+        </div>
+        <div class="split__visual" data-animate>
+          <div class="stat-stack">
+            <div class="stat-stack__item glass">
+              <span class="stat__num"><span data-count="6" data-suffix=""></span></span>
+              <span class="stat__label">Gigafactories worldwide</span>
+            </div>
+            <div class="stat-stack__item glass">
+              <span class="stat__num"><span data-count="40" data-suffix="%"></span></span>
+              <span class="stat__label">Smaller factory footprint targeted</span>
+            </div>
+            <div class="stat-stack__item glass">
+              <span class="stat__num"><span data-count="1" data-prefix="~" data-suffix="-piece"></span></span>
+              <span class="stat__label">Rear underbody, giga-cast</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 11 · SECTION DIVIDER 03 ============ -->
+    <section class="slide slide--divider" data-bg="section" data-theme="blue" data-section="The Fleet">
+      <div class="slide__inner divider">
+        <span class="divider__num" data-animate>03</span>
+        <h2 class="divider__title" data-animate>The Fleet</h2>
+        <p class="divider__sub" data-animate>Six vehicles, one platform philosophy. <span class="tap-hint">Tap a card for specs.</span></p>
+      </div>
+    </section>
+
+    <!-- ============ 12 · THE FLEET (modal triggers) ============ -->
+    <section class="slide" data-bg="calm" data-theme="blue" data-section="The Fleet">
+      <div class="slide__inner">
+        <header class="slide__head">
+          <span class="eyebrow" data-animate>The Range</span>
+          <h2 class="slide__title" data-animate>Pick your mission</h2>
+        </header>
+        <div class="fleet">
+          <button class="fleet__card glass" data-modal="model3" data-animate>
+            <span class="fleet__tag">Sedan</span>
+            <h3>Model 3</h3>
+            <p>The mass-market icon.</p>
+            <span class="fleet__cta">View specs →</span>
+          </button>
+          <button class="fleet__card glass" data-modal="modely" data-animate>
+            <span class="fleet__tag">SUV</span>
+            <h3>Model Y</h3>
+            <p>The world's best-seller.</p>
+            <span class="fleet__cta">View specs →</span>
+          </button>
+          <button class="fleet__card glass" data-modal="models" data-animate>
+            <span class="fleet__tag">Flagship</span>
+            <h3>Model S</h3>
+            <p>Plaid performance.</p>
+            <span class="fleet__cta">View specs →</span>
+          </button>
+          <button class="fleet__card glass" data-modal="modelx" data-animate>
+            <span class="fleet__tag">SUV</span>
+            <h3>Model X</h3>
+            <p>Falcon-wing flagship.</p>
+            <span class="fleet__cta">View specs →</span>
+          </button>
+          <button class="fleet__card glass" data-modal="cybertruck" data-animate>
+            <span class="fleet__tag">Truck</span>
+            <h3>Cybertruck</h3>
+            <p>Exoskeleton, redefined.</p>
+            <span class="fleet__cta">View specs →</span>
+          </button>
+          <button class="fleet__card glass" data-modal="roadster" data-animate>
+            <span class="fleet__tag">Supercar</span>
+            <h3>Roadster</h3>
+            <p>The fastest, returning.</p>
+            <span class="fleet__cta">View specs →</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 13 · MODEL 3 & Y ============ -->
+    <section class="slide" data-bg="calm" data-theme="blue" data-section="The Fleet">
+      <div class="slide__inner">
+        <header class="slide__head">
+          <span class="eyebrow" data-animate>The Volume Duo</span>
+          <h2 class="slide__title" data-animate>Model 3 &amp; Model Y</h2>
+        </header>
+        <div class="duo">
+          <article class="duo__panel glass" data-animate>
+            <h3>Model 3</h3>
+            <p class="duo__desc">The refreshed sedan — quieter, longer-range, sharper.</p>
+            <div class="spec-line"><span>Range</span><b>up to ~363 mi</b></div>
+            <div class="spec-line"><span>0–60 mph</span><b>2.9 s (Perf.)</b></div>
+            <div class="spec-line"><span>Drag coeff.</span><b>0.219 Cd</b></div>
+          </article>
+          <article class="duo__panel glass" data-animate>
+            <h3>Model Y</h3>
+            <p class="duo__desc">The best-selling vehicle on Earth, refreshed for 2025.</p>
+            <div class="spec-line"><span>Range</span><b>up to ~330 mi</b></div>
+            <div class="spec-line"><span>Seating</span><b>5–7 seats</b></div>
+            <div class="spec-line"><span>Cargo</span><b>~76 cu ft</b></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 14 · CYBERTRUCK (3D feature) ============ -->
+    <section class="slide slide--tech" data-bg="techFocus" data-theme="cyan" data-section="The Fleet">
+      <div class="slide__inner split split--wide">
+        <div class="split__text">
+          <header class="slide__head">
+            <span class="eyebrow" data-animate>Stainless Exoskeleton</span>
+            <h2 class="slide__title" data-animate>Cybertruck</h2>
+          </header>
+          <p class="lead" data-animate>
+            Ultra-hard 30X cold-rolled stainless steel on an 800-volt architecture.
+            A truck that looks like nothing before it.
+          </p>
+          <div class="chips" data-animate>
+            <div class="chip">
+              <b><span data-count="845"></span></b>
+              <span>hp · Cyberbeast</span>
+            </div>
+            <div class="chip">
+              <b><span data-count="2.6" data-decimals="1"></span><small>s</small></b>
+              <span>0–60 mph</span>
+            </div>
+            <div class="chip">
+              <b><span data-count="11000"></span><small>lb</small></b>
+              <span>Max towing</span>
+            </div>
+          </div>
+        </div>
+        <div class="split__visual split__visual--3d" data-animate>
+          <div class="orbit-caption glass">Stainless exoskeleton · drag to orbit</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 15 · MODEL S & X ============ -->
+    <section class="slide" data-bg="calm" data-theme="violet" data-section="The Fleet">
+      <div class="slide__inner">
+        <header class="slide__head">
+          <span class="eyebrow" data-animate>The Flagships</span>
+          <h2 class="slide__title" data-animate>Model S &amp; Model X Plaid</h2>
+        </header>
+        <div class="duo">
+          <article class="duo__panel glass" data-animate>
+            <h3>Model S Plaid</h3>
+            <p class="duo__desc">A sedan that outruns supercars.</p>
+            <div class="spec-line"><span>0–60 mph</span><b>1.99 s</b></div>
+            <div class="spec-line"><span>Top speed</span><b>200 mph</b></div>
+            <div class="spec-line"><span>Power</span><b>1,020 hp</b></div>
+          </article>
+          <article class="duo__panel glass" data-animate>
+            <h3>Model X Plaid</h3>
+            <p class="duo__desc">Falcon-wing doors, seven seats, supercar pace.</p>
+            <div class="spec-line"><span>0–60 mph</span><b>2.5 s</b></div>
+            <div class="spec-line"><span>Range</span><b>up to ~335 mi</b></div>
+            <div class="spec-line"><span>Power</span><b>1,020 hp</b></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 16 · SEMI & ROADSTER ============ -->
+    <section class="slide" data-bg="calm" data-theme="violet" data-section="The Fleet">
+      <div class="slide__inner">
+        <header class="slide__head">
+          <span class="eyebrow" data-animate>Hauling &amp; Halo</span>
+          <h2 class="slide__title" data-animate>Semi &amp; Roadster</h2>
+        </header>
+        <div class="duo">
+          <article class="duo__panel glass" data-animate>
+            <h3>Tesla Semi</h3>
+            <p class="duo__desc">Class-8 freight, electrified. Tri-motor, rear-drive.</p>
+            <div class="spec-line"><span>Range</span><b>up to ~500 mi</b></div>
+            <div class="spec-line"><span>Power</span><b>up to 1,073 hp</b></div>
+            <div class="spec-line"><span>0–60 (loaded)</span><b>~20 s</b></div>
+          </article>
+          <article class="duo__panel glass" data-animate>
+            <h3>Roadster</h3>
+            <p class="duo__desc">The next-gen halo car. The benchmark resets.</p>
+            <div class="spec-line"><span>0–60 mph</span><b>&lt; 2.0 s (target)</b></div>
+            <div class="spec-line"><span>Range</span><b>~620 mi (target)</b></div>
+            <div class="spec-line"><span>Top speed</span><b>250+ mph (target)</b></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 17 · SECTION DIVIDER 04 ============ -->
+    <section class="slide slide--divider" data-bg="section" data-theme="violet" data-section="Autonomy &amp; AI">
+      <div class="slide__inner divider">
+        <span class="divider__num" data-animate>04</span>
+        <h2 class="divider__title" data-animate>Autonomy &amp; AI</h2>
+        <p class="divider__sub" data-animate>Real-world AI, learning from billions of miles.</p>
+      </div>
+    </section>
+
+    <!-- ============ 18 · FULL SELF-DRIVING ============ -->
+    <section class="slide slide--tech" data-bg="techFocus" data-theme="violet" data-section="Autonomy &amp; AI">
+      <div class="slide__inner split split--wide">
+        <div class="split__text">
+          <header class="slide__head">
+            <span class="eyebrow" data-animate>Full Self-Driving</span>
+            <h2 class="slide__title" data-animate>Vision-only,<br/>end to end</h2>
+          </header>
+          <p class="lead" data-animate>
+            Eight cameras feed a single neural network that outputs controls directly —
+            no high-definition maps, no lidar. The same stack that drives the car drives the robot.
+          </p>
+        </div>
+        <div class="split__visual split__visual--3d" data-animate>
+          <div class="orbit-caption glass">Neural net · always learning</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 19 · FSD DATA ============ -->
+    <section class="slide" data-bg="tech" data-theme="violet" data-section="Autonomy &amp; AI">
+      <div class="slide__inner">
+        <header class="slide__head">
+          <span class="eyebrow" data-animate>The Data Flywheel</span>
+          <h2 class="slide__title" data-animate>More miles, smarter every mile</h2>
+        </header>
+        <div class="stat-row stat-row--3" data-animate>
+          <div class="stat glass stat--boxed">
+            <span class="stat__num"><span data-count="5" data-suffix="B+"></span></span>
+            <span class="stat__label">Cumulative FSD miles driven</span>
+          </div>
+          <div class="stat glass stat--boxed">
+            <span class="stat__num"><span data-count="8"></span></span>
+            <span class="stat__label">Cameras · 360° vision</span>
+          </div>
+          <div class="stat glass stat--boxed">
+            <span class="stat__num"><span data-count="100" data-suffix="%"></span></span>
+            <span class="stat__label">Fleet sends edge cases back</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 20 · CYBERCAB ============ -->
+    <section class="slide" data-bg="tech" data-theme="violet" data-section="Autonomy &amp; AI">
+      <div class="slide__inner split">
+        <div class="split__text">
+          <header class="slide__head">
+            <span class="eyebrow" data-animate>Robotaxi</span>
+            <h2 class="slide__title" data-animate>Cybercab</h2>
+          </header>
+          <p class="lead" data-animate>
+            A two-seater built only for autonomy — no steering wheel, no pedals,
+            dihedral doors, and inductive charging. The most efficient EV ever certified.
+          </p>
+        </div>
+        <div class="split__visual" data-animate>
+          <div class="stat-stack">
+            <div class="stat-stack__item glass">
+              <span class="stat__num"><span data-count="165"></span></span>
+              <span class="stat__label">Wh per mile · efficiency</span>
+            </div>
+            <div class="stat-stack__item glass">
+              <span class="stat__num"><span data-count="30" data-prefix="< $" data-suffix="K"></span></span>
+              <span class="stat__label">Target price (planned)</span>
+            </div>
+            <div class="stat-stack__item glass">
+              <span class="stat__num"><span data-count="2"></span></span>
+              <span class="stat__label">Seats · purpose-built</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 21 · OPTIMUS ============ -->
+    <section class="slide" data-bg="tech" data-theme="violet" data-section="Autonomy &amp; AI">
+      <div class="slide__inner split">
+        <div class="split__text">
+          <header class="slide__head">
+            <span class="eyebrow" data-animate>Optimus</span>
+            <h2 class="slide__title" data-animate>A robot for the real world</h2>
+          </header>
+          <p class="lead" data-animate>
+            A general-purpose humanoid that runs the same AI as the cars. Designed for
+            repetitive, dangerous, or dull work — and to be built at automotive scale.
+          </p>
+        </div>
+        <div class="split__visual" data-animate>
+          <div class="stat-stack">
+            <div class="stat-stack__item glass">
+              <span class="stat__num"><span data-count="22"></span></span>
+              <span class="stat__label">Degrees of freedom · hand</span>
+            </div>
+            <div class="stat-stack__item glass">
+              <span class="stat__num"><span data-count="5" data-suffix=" mph"></span></span>
+              <span class="stat__label">Walking speed target</span>
+            </div>
+            <div class="stat-stack__item glass">
+              <span class="stat__num"><span data-count="20" data-suffix=" kg"></span></span>
+              <span class="stat__label">Payload it can carry</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 22 · SECTION DIVIDER 05 ============ -->
+    <section class="slide slide--divider" data-bg="section" data-theme="teal" data-section="Energy">
+      <div class="slide__inner divider">
+        <span class="divider__num" data-animate>05</span>
+        <h2 class="divider__title" data-animate>Energy</h2>
+        <p class="divider__sub" data-animate>Generate. Store. Charge. The other half of the mission.</p>
+      </div>
+    </section>
+
+    <!-- ============ 23 · ENERGY ECOSYSTEM ============ -->
+    <section class="slide" data-bg="energy" data-theme="teal" data-section="Energy">
+      <div class="slide__inner">
+        <header class="slide__head">
+          <span class="eyebrow" data-animate>The Loop</span>
+          <h2 class="slide__title" data-animate>Sunlight to wheels</h2>
+        </header>
+        <div class="cards-4">
+          <article class="card glass" data-animate>
+            <div class="card__icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg></div>
+            <h3>Generate</h3><p>Solar Roof &amp; panels.</p>
+          </article>
+          <article class="card glass" data-animate>
+            <div class="card__icon"><svg viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6"/></svg></div>
+            <h3>Store</h3><p>Powerwall &amp; Megapack.</p>
+          </article>
+          <article class="card glass" data-animate>
+            <div class="card__icon"><svg viewBox="0 0 24 24"><path d="M13 2L3 14h7l-1 8 10-12h-7z"/></svg></div>
+            <h3>Charge</h3><p>Supercharger network.</p>
+          </article>
+          <article class="card glass" data-animate>
+            <div class="card__icon"><svg viewBox="0 0 24 24"><path d="M5 11l4-7 6 0 4 7M5 11v6a2 2 0 002 2h10a2 2 0 002-2v-6M5 11h14"/><circle cx="8.5" cy="16" r="1"/><circle cx="15.5" cy="16" r="1"/></svg></div>
+            <h3>Drive</h3><p>The whole fleet.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 24 · POWERWALL & MEGAPACK (Chart.js) ============ -->
+    <section class="slide" data-bg="energy" data-theme="teal" data-section="Energy">
+      <div class="slide__inner split">
+        <div class="split__text">
+          <header class="slide__head">
+            <span class="eyebrow" data-animate>Storage at Scale</span>
+            <h2 class="slide__title" data-animate>Powerwall &amp; Megapack</h2>
+          </header>
+          <p class="lead" data-animate>
+            Megapack stabilizes entire grids; Powerwall backs up the home. Energy storage
+            is now one of Tesla's fastest-growing businesses.
+          </p>
+          <p class="split__note" data-animate>Annual energy storage deployed, GWh <em>(2025 est.)</em></p>
+        </div>
+        <div class="split__visual" data-animate>
+          <div class="chart-card glass">
+            <canvas id="chart-energy"></canvas>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 25 · SOLAR ============ -->
+    <section class="slide" data-bg="energy" data-theme="teal" data-section="Energy">
+      <div class="slide__inner statement">
+        <span class="eyebrow" data-animate>Solar</span>
+        <p class="statement__text" data-animate>
+          Every roof is a <span class="grad">power plant</span> waiting to happen.
+          Solar Roof tiles look like a roof — and generate like a field.
+        </p>
+        <div class="statement__by" data-animate>Generate where you live.</div>
+      </div>
+    </section>
+
+    <!-- ============ 26 · SUPERCHARGER ============ -->
+    <section class="slide" data-bg="energy" data-theme="teal" data-section="Energy">
+      <div class="slide__inner">
+        <header class="slide__head">
+          <span class="eyebrow" data-animate>Supercharger Network</span>
+          <h2 class="slide__title" data-animate>The world's fastest-growing charging grid</h2>
+        </header>
+        <div class="stat-row stat-row--3" data-animate>
+          <div class="stat glass stat--boxed">
+            <span class="stat__num"><span data-count="70000" data-suffix="+"></span></span>
+            <span class="stat__label">Connectors globally</span>
+          </div>
+          <div class="stat glass stat--boxed">
+            <span class="stat__num"><span data-count="6.7" data-decimals="1" data-suffix=" TWh"></span></span>
+            <span class="stat__label">Delivered to cars in 2025</span>
+          </div>
+          <div class="stat glass stat--boxed">
+            <span class="stat__num"><span data-count="15" data-suffix=" min"></span></span>
+            <span class="stat__label">Up to ~200 mi added</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 27 · SECTION DIVIDER 06 ============ -->
+    <section class="slide slide--divider" data-bg="section" data-theme="blue" data-section="Impact &amp; Vision">
+      <div class="slide__inner divider">
+        <span class="divider__num" data-animate>06</span>
+        <h2 class="divider__title" data-animate>Impact &amp; Vision</h2>
+        <p class="divider__sub" data-animate>The point of all of it.</p>
+      </div>
+    </section>
+
+    <!-- ============ 28 · SUSTAINABILITY IMPACT ============ -->
+    <section class="slide" data-bg="energy" data-theme="teal" data-section="Impact &amp; Vision">
+      <div class="slide__inner">
+        <header class="slide__head">
+          <span class="eyebrow" data-animate>Measurable Impact</span>
+          <h2 class="slide__title" data-animate>Tonnes that never happened</h2>
+        </header>
+        <div class="stat-row stat-row--3" data-animate>
+          <div class="stat glass stat--boxed">
+            <span class="stat__num"><span data-count="30" data-suffix="M+"></span></span>
+            <span class="stat__label">Tonnes of CO₂e avoided (annual, est.)</span>
+          </div>
+          <div class="stat glass stat--boxed">
+            <span class="stat__num"><span data-count="90" data-suffix="%+"></span></span>
+            <span class="stat__label">Battery materials recoverable</span>
+          </div>
+          <div class="stat glass stat--boxed">
+            <span class="stat__num"><span data-count="100" data-suffix="%"></span></span>
+            <span class="stat__label">The goal: a fully sustainable loop</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 29 · THE ROAD AHEAD ============ -->
+    <section class="slide" data-bg="calm" data-theme="blue" data-section="Impact &amp; Vision">
+      <div class="slide__inner">
+        <header class="slide__head slide__head--center">
+          <span class="eyebrow" data-animate>The Road Ahead</span>
+          <h2 class="slide__title" data-animate>Autonomy. Affordability. Abundance.</h2>
+        </header>
+        <div class="cards-3 cards-3--center">
+          <article class="card glass" data-animate>
+            <h3>Scale Robotaxi</h3>
+            <p>Turn the existing fleet into an autonomous network.</p>
+          </article>
+          <article class="card glass" data-animate>
+            <h3>Ship Optimus</h3>
+            <p>Move humanoids from the factory floor to the world.</p>
+          </article>
+          <article class="card glass" data-animate>
+            <h3>Store the Grid</h3>
+            <p>Make renewable energy dispatchable, everywhere.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 30 · CLOSING ============ -->
+    <section class="slide slide--hero slide--closing" data-bg="closing" data-theme="blue" data-section="Thank you">
+      <div class="slide__inner hero">
+        <h1 class="hero__title hero__title--closing" data-animate>
+          <span class="hero__word">The future is<br/><span class="grad">electric.</span></span>
+        </h1>
+        <div class="closing__brand" data-animate>
+          <svg class="t-mark t-mark--mid" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5.362l2.475-3.026s4.245.09 8.471 2.054c-1.082 1.636-3.231 2.438-3.231 2.438-.146-1.439-1.154-1.79-4.354-1.79L12 24 8.619 5.034c-3.18 0-4.211.354-4.358 1.794 0 0-2.149-.807-3.231-2.443C5.255 2.421 9.5 2.331 9.5 2.331L12 5.362z"/>
+          </svg>
+          <span class="closing__wordmark">TESLA</span>
+        </div>
+        <p class="hero__lead" data-animate>Thank you. — Questions welcome.</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ============================================================
+       MODAL / SUB-PAGE
+  ============================================================= -->
+  <div id="modal" class="modal" aria-hidden="true">
+    <div class="modal__scrim" data-close></div>
+    <div class="modal__panel glass" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <button class="modal__close" data-close aria-label="Close">
+        <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+      <div id="modal-body" class="modal__body"></div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       LIBRARIES (CDN) + SCRIPTS
+  ============================================================= -->
+  <!-- Three.js (global build, works from file://) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+  <!-- SVGLoader — used to extrude the exact Tesla logo vector into 3D -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/SVGLoader.js"></script>
+
+  <!-- GLTFLoader — uncomment to load your own .glb model (see three_scene.js) -->
+  <!-- <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script> -->
+
+  <!-- Chart.js (UMD global build) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+  <!-- Our code -->
+  <script src="three_scene.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

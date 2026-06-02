@@ -1,0 +1,28 @@
+# Dependencies & build output
+node_modules
+dist
+public/editor-bundle.js
+
+# Env & secrets
+*.local
+.env
+.env.*
+
+# IDE / editor
+.idea/
+.vscode/
+
+# Claude Code (harness config + working memory — not part of the app)
+.claude/
+/memory/
+
+# Local working notes / session summaries (not part of the app)
+/md/
+
+# Python (main.py launcher)
+__pycache__/
+*.py[cod]
+
+# OS cruft
+.DS_Store
+Thumbs.db
