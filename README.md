@@ -22,9 +22,9 @@ Point it at a deck an LLM generated as static HTML/CSS/JS, then click, drag, res
 
 The deck on the left is a complete, self-contained HTML presentation an AI wrote — gradients, a live Three.js logo, scroll-triggered animations and all. Slidesmith renders it **live** and lets you edit it like PowerPoint: select the title, nudge it, recolor it, or just ask the AI to "make it more premium" — and the deck's own code keeps running untouched.
 
-<video src="docs/slidesmith-demo.mp4" poster="docs/poster.png" controls muted loop playsinline width="900"></video>
+![Slidesmith demo](docs/slidesmith-demo.gif)
 
-> ▶️ **[Watch the demo video](docs/slidesmith-demo.mp4)** (2.4 MB). GitHub renders the inline player on the repo page; the overview image above is a still from it for viewers that don't.
+> ▶️ This is a short, looping highlight. **[Watch the full demo in HD (MP4, 2.4 MB)](docs/slidesmith-demo.mp4)** for the complete walkthrough.
 
 ## The big idea — harness the AI, don't trust it with your HTML
 
