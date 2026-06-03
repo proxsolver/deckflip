@@ -10,6 +10,7 @@ import { PATCH_KEYS, type PatchOp } from "../shared/patch-keys";
 import { ANIMATION_NONE, ANIMATION_PRESETS, ANIMATION_TIMING_FUNCTIONS } from "../shared/animation-presets";
 import { LAYOUT_VERBS, type EditorAction } from "../shared/actions";
 import { BLOCK_TEMPLATES, BLOCK_TYPES, type BlockType } from "../shared/blocks";
+import { SCENE_PARAMS, SCENE_PARAM_KEYS } from "../shared/scene-params";
 
 type ContextLike = Record<string, unknown> & {
   id?: string;
@@ -103,6 +104,9 @@ async function callOpenAi(args: CallArgs): Promise<unknown> {
     "and `axis`/`relativeTo`/`gap`/`cols`/`step` as relevant. NEVER set coordinates yourself for layout — the editor computes them.\n" +
     '- "insertBlock": add a new content block — set `blockType` (one of the allowed types) and `slots` (array of {name,value}) ' +
     "for that block's text.\n" +
+    '- "sceneParam": tune the deck\'s 3D / canvas BACKGROUND animation — set `sceneKey` (one of the allowed scene params) ' +
+    "and `sceneValue` (a number within that param's range, or a CSS color). Use this ONLY when the user asks to change the " +
+    "moving 3D/canvas background itself (spin speed, particles, light color, brightness); it has no `id`.\n" +
     "Set every unused field to null. " +
     "Never return full HTML, JavaScript, CSS files, markdown, or explanations outside the JSON schema. " +
     "Preserve HTML semantics and animation classes. Prefer small, safe edits. " +
@@ -122,11 +126,16 @@ async function callOpenAi(args: CallArgs): Promise<unknown> {
     animation_timing_functions: [...ANIMATION_TIMING_FUNCTIONS],
     layout_verbs: [...LAYOUT_VERBS],
     block_types: blockSlots,
+    scene_params: SCENE_PARAM_KEYS.map((k) => {
+      const s = SCENE_PARAMS[k];
+      return s.type === "number" ? { key: k, type: s.type, min: s.min, max: s.max } : { key: k, type: s.type };
+    }),
     rules: [
       "Use a `patch` action per object you restyle; each MUST include that object's `id`.",
       "Use ONE `layout` action to arrange several objects; put their ids in `ids` and never compute coordinates.",
       "Use `align` with relativeTo:\"slide\" to center on the slide; relativeTo:\"group\" aligns within the selection.",
       "Use an `insertBlock` action to add new content; fill only the slot names listed for that block type.",
+      "Use a `sceneParam` action (sceneKey + sceneValue) ONLY to change the moving 3D/canvas background; one action per param.",
       "If changing text, return plain text with line breaks matching visible text segments when possible.",
       "Do not remove important nested tags; the app maps text lines onto existing text nodes.",
       "If the request is vague, make a minimal tasteful adjustment.",
@@ -205,11 +214,18 @@ function mockActions(prompt: string, contexts: ContextLike[]): AiActionResponse 
   const has = (...tokens: string[]) => tokens.some((t) => p.includes(t));
   const actions: EditorAction[] = [];
 
+  // Scene-param intent (the 3D / canvas background). Computed first so that when
+  // the prompt is clearly about the background we don't also slap a stray
+  // fallback border on the selected object.
+  const sceneActions = mockSceneParams(prompt);
+  const sceneIntent = sceneActions.length > 0;
+
   // Per-object style/text/animation patches (the original demo logic).
   for (const ctx of contexts) {
-    const patch = validatePatch(mockPatchFor(prompt, ctx));
+    const patch = validatePatch(mockPatchFor(prompt, ctx, !sceneIntent));
     if (Object.keys(patch).length) actions.push({ type: "patch", id: ctx.id as string, patch });
   }
+  actions.push(...sceneActions);
 
   // Layout intent over the whole selection.
   if (ids.length >= 2) {
@@ -246,6 +262,39 @@ function mockActions(prompt: string, contexts: ContextLike[]): AiActionResponse 
   };
 }
 
+// Deterministic scene-param matching for demo mode (bilingual). Targets the 3D /
+// canvas background; emitted only when a background-motion keyword is present, so
+// it never fires on ordinary object edits. The editor no-ops these if the loaded
+// deck exposes no scene controller.
+function mockSceneParams(prompt: string): EditorAction[] {
+  const p = prompt.toLowerCase();
+  const has = (...tokens: string[]) => tokens.some((t) => p.includes(t));
+  const out: EditorAction[] = [];
+  const add = (key: keyof typeof SCENE_PARAMS, value: number | string) =>
+    out.push({ type: "sceneParam", key, value });
+
+  // Spin speed.
+  if (has("spin faster", "faster", "빠르게", "빨리", "회전 빠")) add("spinSpeed", 2.2);
+  else if (has("spin slower", "slower", "천천히", "느리게", "회전 느")) add("spinSpeed", 0.4);
+  else if (has("stop spin", "stop rotating", "정지", "회전 멈")) add("spinSpeed", 0);
+
+  // Particle density.
+  if (has("more particle", "denser", "입자 많", "파티클 많")) add("particleOpacity", 1);
+  else if (has("fewer particle", "less particle", "입자 적", "파티클 줄", "particle off")) add("particleOpacity", 0.15);
+
+  // Light colors (reuse the named-color table).
+  const color = DEMO_COLORS.find((c) => has(...c.tokens));
+  if (color && has("light", "lighting", "glow", "조명", "빛", "라이트")) {
+    add(has("fill", "secondary", "보조") ? "fillLightColor" : "keyLightColor", color.value);
+  }
+
+  // Brightness of the whole scene.
+  if (has("brighter background", "background brighter", "배경 밝", "장면 밝")) add("brightness", 1.5);
+  else if (has("darker background", "background darker", "배경 어둡", "장면 어둡")) add("brightness", 0.6);
+
+  return out;
+}
+
 // Named colors the demo understands, English + Korean.
 const DEMO_COLORS: Array<{ tokens: string[]; value: string }> = [
   { tokens: ["gold", "골드", "금색"], value: "#8A7544" },
@@ -257,7 +306,11 @@ const DEMO_COLORS: Array<{ tokens: string[]; value: string }> = [
   { tokens: ["beige", "베이지", "크림"], value: "#F8F6F1" },
 ];
 
-function mockPatchFor(prompt: string, context: Record<string, unknown>): Record<string, unknown> {
+function mockPatchFor(
+  prompt: string,
+  context: Record<string, unknown>,
+  allowFallback = true
+): Record<string, unknown> {
   const p = prompt.toLowerCase();
   const patch: Record<string, unknown> = {};
   const currentText = String(context.text ?? "");
@@ -319,7 +372,10 @@ function mockPatchFor(prompt: string, context: Record<string, unknown>): Record<
   else if (has("펄스", "pulse", "두근", "깜빡")) patch.animationName = "pulse";
   else if (has("둥둥", "float", "떠다", "부유")) patch.animationName = "float";
   else if (has("애니메이션", "animate", "animation", "움직", "등장")) patch.animationName = "fadeInUp";
-  if (has("멈춰", "정지", "no animation", "remove animation", "애니메이션 제거"))
+  // Pause/resume an existing animation (distinct from REMOVING it).
+  if (has("pause", "일시정지", "정지", "멈춰", "멈추")) patch.animationPlayState = "paused";
+  else if (has("resume", "play", "재생", "계속")) patch.animationPlayState = "running";
+  if (has("no animation", "remove animation", "애니메이션 제거", "애니메이션 삭제"))
     patch.animationName = "none";
 
   // Background-friendly keywords (work on the picker-selected background too).
@@ -328,9 +384,10 @@ function mockPatchFor(prompt: string, context: Record<string, unknown>): Record<
   if (has("어둡게", "dim", "흐릿", "은은")) patch.opacity = 0.35;
   if (has("밝게", "brighten", "brighter", "환하")) patch.filter = "brightness(1.4)";
 
-  if (Object.keys(patch).length === 0) {
+  if (allowFallback && Object.keys(patch).length === 0) {
     // Nothing matched — make a visible-but-harmless tweak so the demo always "does
-    // something" and the round-trip is obvious.
+    // something" and the round-trip is obvious. Suppressed when the prompt is
+    // really about the background scene (so we don't deface the selected object).
     patch.borderColor = "#0A84FF";
     patch.borderWidth = "2px";
     patch.borderStyle = "dashed";

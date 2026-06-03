@@ -5,7 +5,8 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import type { EditorTool } from "@/types/messages";
 import type { BackgroundLayer } from "@/types/context";
-import type { LayoutOp } from "@shared/actions";
+import type { LayoutOp, SceneParamOp } from "@shared/actions";
+import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp } from "@shared/scene-params";
 import { BLOCK_TYPES, BLOCK_TEMPLATES, type BlockType } from "@shared/blocks";
 import {
   BackIcon, ChevronDown, DuplicateIcon, ExportIcon, FolderIcon, FrontIcon, HelpIcon,
@@ -28,6 +29,13 @@ const BlockIcon = () => (
     <rect x="2.5" y="2.5" width="11" height="11" rx="2" /><line x1="2.5" y1="6.5" x2="13.5" y2="6.5" />
   </svg>
 );
+// Sliders icon for the Scene (3D background animation) panel.
+const SceneIcon = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round">
+    <line x1="2" y1="4.5" x2="14" y2="4.5" /><circle cx="6" cy="4.5" r="1.8" fill="currentColor" stroke="none" />
+    <line x1="2" y1="11.5" x2="14" y2="11.5" /><circle cx="10" cy="11.5" r="1.8" fill="currentColor" stroke="none" />
+  </svg>
+);
 
 export interface ToolbarProps {
   hasDeck: boolean;
@@ -44,6 +52,10 @@ export interface ToolbarProps {
   onSetTool: (tool: EditorTool) => void;
   onListBackgrounds: () => Promise<BackgroundLayer[]>;
   onSelectLayer: (id: string) => void;
+  onListSceneParams: () => Promise<SceneParamInfo[]>;
+  onApplySceneParam: (op: SceneParamOp) => void;
+  onListBackgroundMotion: () => Promise<BackgroundMotionInfo>;
+  onApplyBackgroundMotion: (op: BackgroundMotionOp) => void;
   onPrev: () => void;
   onNext: () => void;
   onDuplicate: () => void;
@@ -88,6 +100,11 @@ export function Toolbar(props: ToolbarProps) {
   const [bgLayers, setBgLayers] = useState<BackgroundLayer[]>([]);
   const bgRef = useRef<HTMLDivElement>(null);
 
+  const [sceneOpen, setSceneOpen] = useState(false);
+  const [sceneParams, setSceneParams] = useState<SceneParamInfo[]>([]);
+  const [bgMotion, setBgMotion] = useState<BackgroundMotionInfo>({ available: false, playing: true, speed: 1 });
+  const sceneRef = useRef<HTMLDivElement>(null);
+
   const [arrangeOpen, setArrangeOpen] = useState(false);
   const arrangeRef = useRef<HTMLDivElement>(null);
   const [blockOpen, setBlockOpen] = useState(false);
@@ -115,6 +132,42 @@ export function Toolbar(props: ToolbarProps) {
     const next = !bgOpen;
     setBgOpen(next);
     if (next) setBgLayers(await props.onListBackgrounds());
+  };
+
+  useEffect(() => {
+    if (!sceneOpen) return;
+    const close = (e: MouseEvent) => {
+      if (sceneRef.current && !sceneRef.current.contains(e.target as Node)) setSceneOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [sceneOpen]);
+
+  const toggleScene = async () => {
+    const next = !sceneOpen;
+    setSceneOpen(next);
+    if (next) {
+      const [params, motion] = await Promise.all([props.onListSceneParams(), props.onListBackgroundMotion()]);
+      setSceneParams(params);
+      setBgMotion(motion);
+    }
+  };
+
+  // Apply a scene-param change live and reflect the new value in the control.
+  const setSceneValue = (key: string, value: number | string) => {
+    setSceneParams((prev) => prev.map((p) => (p.key === key ? { ...p, value } : p)));
+    props.onApplySceneParam({ key, value } as SceneParamOp);
+  };
+
+  // Universal background-motion controls (CSS animations, no deck contract).
+  const setMotionSpeed = (speed: number) => {
+    setBgMotion((m) => ({ ...m, speed }));
+    props.onApplyBackgroundMotion({ speed });
+  };
+  const toggleMotionPlay = () => {
+    const playing = !bgMotion.playing;
+    setBgMotion((m) => ({ ...m, playing }));
+    props.onApplyBackgroundMotion({ playing });
   };
 
   useEffect(() => {
@@ -216,17 +269,99 @@ export function Toolbar(props: ToolbarProps) {
             {bgLayers.map((layer) => (
               <button
                 key={layer.id}
-                className="menu-item"
+                className="menu-item bg-layer-item"
+                title={layer.selector}
                 onClick={() => {
                   setBgOpen(false);
                   props.onSelectLayer(layer.id);
                 }}
               >
                 <span className="menu-icon"><LayersIcon /></span>
-                {layer.label}
-                <span className="menu-dim">{layer.w}×{layer.h}</span>
+                <span className="bg-layer-text">
+                  <span className="bg-layer-name">
+                    {layer.label}
+                    <span className="menu-dim">{layer.w}×{layer.h}</span>
+                  </span>
+                  {layer.hint && <span className="bg-layer-hint">{layer.hint}</span>}
+                </span>
               </button>
             ))}
+          </div>
+        )}
+      </div>
+
+      <div className="file-menu scene-menu" ref={sceneRef}>
+        <button
+          className="icon-btn"
+          title="Tune the 3D background animation"
+          disabled={editDisabled}
+          onClick={toggleScene}
+        >
+          <SceneIcon />
+        </button>
+        {sceneOpen && (
+          <div className="menu scene-panel">
+            <div className="menu-head">Background animation</div>
+            {sceneParams.length === 0 && !bgMotion.available && (
+              <div className="menu-empty">This deck has no adjustable background animation.</div>
+            )}
+            {/* Universal CSS-animation controls (any deck). */}
+            {bgMotion.available && (
+              <div className="scene-group">
+                <div className="scene-group-head">Motion (CSS layers)</div>
+                <label className="scene-row">
+                  <span className="scene-label">
+                    Speed
+                    <span className="menu-dim">{bgMotion.speed.toFixed(2)}×</span>
+                  </span>
+                  <input
+                    type="range"
+                    className="scene-range"
+                    min={0.25}
+                    max={4}
+                    step={0.25}
+                    value={bgMotion.speed}
+                    onChange={(e) => setMotionSpeed(Number(e.target.value))}
+                  />
+                </label>
+                <button className="menu-item scene-toggle" onClick={toggleMotionPlay}>
+                  {bgMotion.playing ? "⏸  Pause animation" : "▶  Resume animation"}
+                </button>
+              </div>
+            )}
+            {/* Deck-provided 3D / canvas params (only when the deck opts in). */}
+            {sceneParams.length > 0 && bgMotion.available && (
+              <div className="scene-group-head">3D scene</div>
+            )}
+            {sceneParams.map((sp) =>
+              sp.type === "color" ? (
+                <label key={sp.key} className="scene-row">
+                  <span className="scene-label">{sp.label}</span>
+                  <input
+                    type="color"
+                    className="scene-color"
+                    value={String(sp.value)}
+                    onChange={(e) => setSceneValue(sp.key, e.target.value)}
+                  />
+                </label>
+              ) : (
+                <label key={sp.key} className="scene-row">
+                  <span className="scene-label">
+                    {sp.label}
+                    <span className="menu-dim">{Number(sp.value).toFixed(2)}</span>
+                  </span>
+                  <input
+                    type="range"
+                    className="scene-range"
+                    min={sp.min ?? 0}
+                    max={sp.max ?? 1}
+                    step={sp.step ?? 0.1}
+                    value={Number(sp.value)}
+                    onChange={(e) => setSceneValue(sp.key, Number(e.target.value))}
+                  />
+                </label>
+              )
+            )}
           </div>
         )}
       </div>

@@ -6,7 +6,8 @@
 //   iframe -> parent : EditorEvent (fire-and-forget: selection/mutation/slide)
 
 import type { Patch, PatchOp } from "@shared/patch-keys";
-import type { EditorAction, LayoutOp, BlockSpec } from "@shared/actions";
+import type { EditorAction, LayoutOp, BlockSpec, SceneParamOp } from "@shared/actions";
+import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp } from "@shared/scene-params";
 import type { SelectionPayload, SelectedContext, SlideInfo, BackgroundLayer } from "./context";
 
 export type EditorTool = "select" | "text" | "rect";
@@ -24,6 +25,10 @@ export type EditorMethod =
   | "deselect"
   | "selectById"
   | "listBackgroundLayers"
+  | "listSceneParams"
+  | "applySceneParam"
+  | "listBackgroundMotion"
+  | "applyBackgroundMotion"
   | "assignStableIds"
   | "bringFront"
   | "sendBack"
@@ -85,6 +90,10 @@ export interface EditorCalls {
   deselect(): Promise<void>;
   selectById(id: string): Promise<void>;
   listBackgroundLayers(): Promise<BackgroundLayer[]>;
+  listSceneParams(): Promise<SceneParamInfo[]>;
+  applySceneParam(op: SceneParamOp): Promise<void>;
+  listBackgroundMotion(): Promise<BackgroundMotionInfo>;
+  applyBackgroundMotion(op: BackgroundMotionOp): Promise<void>;
   assignStableIds(): Promise<string[]>;
   bringFront(): Promise<void>;
   sendBack(): Promise<void>;

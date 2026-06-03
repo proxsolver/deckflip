@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Patch } from "@shared/patch-keys";
 import type { EditorTool } from "@/types/messages";
 import type { SelectionPayload, BackgroundLayer } from "@/types/context";
+import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp } from "@shared/scene-params";
+import type { SceneParamOp } from "@shared/actions";
 import { Toolbar } from "./components/Toolbar";
 import { Inspector } from "./components/Inspector";
 import { DeckFrame } from "./components/DeckFrame";
@@ -228,6 +230,7 @@ export function App() {
           actions.flatMap((a) => {
             if (a.type === "patch") return Object.keys(a.patch);
             if (a.type === "layout") return [`layout:${a.op}`];
+            if (a.type === "sceneParam") return [`scene:${a.key}`];
             return [`block:${a.blockType}`];
           })
         )
@@ -251,6 +254,41 @@ export function App() {
         return;
       }
       bridge.selectById(id);
+    },
+    [bridge]
+  );
+
+  // Scene panel: tune the deck's 3D / canvas background animation (returns [] for
+  // decks that expose no scene controller, which hides the panel).
+  const onListSceneParams = useCallback(
+    async (): Promise<SceneParamInfo[]> => (await bridge.listSceneParams()) ?? [],
+    [bridge]
+  );
+  const onApplySceneParam = useCallback(
+    (op: SceneParamOp) => {
+      if (!editModeRef.current) {
+        setStatus("Turn Edit Mode ON to tune the background animation.");
+        return;
+      }
+      bridge.applySceneParam(op);
+    },
+    [bridge]
+  );
+
+  // Universal CSS-animation control — works on any deck with animated background
+  // layers (no scene contract required).
+  const onListBackgroundMotion = useCallback(
+    async (): Promise<BackgroundMotionInfo> =>
+      (await bridge.listBackgroundMotion()) ?? { available: false, playing: true, speed: 1 },
+    [bridge]
+  );
+  const onApplyBackgroundMotion = useCallback(
+    (op: BackgroundMotionOp) => {
+      if (!editModeRef.current) {
+        setStatus("Turn Edit Mode ON to control the background animation.");
+        return;
+      }
+      bridge.applyBackgroundMotion(op);
     },
     [bridge]
   );
@@ -335,6 +373,10 @@ export function App() {
         onSetTool={onSetTool}
         onListBackgrounds={onListBackgrounds}
         onSelectLayer={onSelectLayer}
+        onListSceneParams={onListSceneParams}
+        onApplySceneParam={onApplySceneParam}
+        onListBackgroundMotion={onListBackgroundMotion}
+        onApplyBackgroundMotion={onApplyBackgroundMotion}
         onPrev={() => bridge.prevSlide()}
         onNext={() => bridge.nextSlide()}
         onDuplicate={() => bridge.duplicateSelected()}

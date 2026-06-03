@@ -35,6 +35,11 @@ export const PATCH_KEYS = [
   "animationDelay",
   "animationTimingFunction",
   "animationIterationCount",
+  // `animationPlayState` ("running" | "paused") is deck-agnostic: it pauses or
+  // resumes whatever CSS animation is already on the element (a deck's own
+  // @keyframes, not just our presets). With `animationDuration` it gives
+  // universal speed/pause control of any CSS-animated element.
+  "animationPlayState",
 ] as const;
 
 export type PatchKey = (typeof PATCH_KEYS)[number];

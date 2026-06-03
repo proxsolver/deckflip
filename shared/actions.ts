@@ -7,6 +7,7 @@
 
 import type { Patch } from "./patch-keys";
 import type { BlockType } from "./blocks";
+import type { SceneParamKey } from "./scene-params";
 
 // --- Layout verbs ---------------------------------------------------------
 
@@ -79,12 +80,25 @@ export interface BlockSpec {
   target?: BlockTarget;
 }
 
+// --- Scene parameters -----------------------------------------------------
+
+// A single tweak to the deck's 3D / canvas background animation. `key` is one of
+// the vetted SCENE_PARAM_KEYS; `value` is a clamped number or a CSS-safe color.
+// Unlike patch/layout it targets no DOM id — the deck's scene controller is the
+// (single, global) target. The editor never computes or emits anything beyond
+// this {key, value} pair.
+export interface SceneParamOp {
+  key: SceneParamKey;
+  value: number | string;
+}
+
 // --- The envelope ---------------------------------------------------------
 
 export type EditorAction =
   | ({ type: "patch"; id: string; patch: Patch })
   | ({ type: "layout" } & LayoutOp)
-  | ({ type: "insertBlock" } & BlockSpec);
+  | ({ type: "insertBlock" } & BlockSpec)
+  | ({ type: "sceneParam" } & SceneParamOp);
 
 export interface ActionEnvelope {
   message: string;

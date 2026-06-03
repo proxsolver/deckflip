@@ -16,7 +16,9 @@ import {
   type LayoutAxis,
   type BlockSpec,
   type BlockSlotValue,
+  type SceneParamOp,
 } from "./actions";
+import { SCENE_PARAMS, type SceneParamKey } from "./scene-params";
 import { BLOCK_TYPE_SET, BLOCK_TEMPLATES, slotNamesFor, type BlockType } from "./blocks";
 
 const ALLOWED_PATCH_KEYS = new Set<string>(PATCH_KEYS);
@@ -145,6 +147,12 @@ function safeAnimationIterationCount(value: unknown): string | null {
   return String(Math.floor(n));
 }
 
+const PLAY_STATE = new Set(["running", "paused"]);
+function safeAnimationPlayState(value: unknown): string | null {
+  const text = String(value).trim().toLowerCase();
+  return PLAY_STATE.has(text) ? text : null;
+}
+
 function safeImageDataUrl(value: unknown): string | null {
   if (value == null) return null;
   const text = String(value).trim();
@@ -269,6 +277,12 @@ export function validatePatch(raw: unknown): Patch {
       if (ic !== null) clean.animationIterationCount = ic;
       continue;
     }
+
+    if (k === "animationPlayState") {
+      const ps = safeAnimationPlayState(value);
+      if (ps !== null) clean.animationPlayState = ps;
+      continue;
+    }
   }
 
   return clean;
@@ -389,6 +403,31 @@ export function validateBlockSpec(raw: unknown): BlockSpec | null {
 }
 
 /**
+ * Validate a scene-parameter tweak. `key` must be a vetted SCENE_PARAM_KEY;
+ * number values are clamped to the param's range, color values pass the same
+ * CSS-color gate as patches. Accepts either the canonical {key,value} shape or
+ * the AI's flat {sceneKey,sceneValue} fields. Returns null if the key is unknown
+ * or the value can't be made safe. Doesn't depend on selection ids — the deck's
+ * scene controller is the (global) target.
+ */
+export function validateSceneParamOp(raw: unknown): SceneParamOp | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const key = String(r.key ?? r.sceneKey ?? "") as SceneParamKey;
+  const spec = SCENE_PARAMS[key];
+  if (!spec) return null;
+  const rawValue = r.value ?? r.sceneValue;
+  if (spec.type === "number") {
+    const v = clampNumber(rawValue, spec.min ?? 0, spec.max ?? 1);
+    if (v == null) return null;
+    return { key, value: v };
+  }
+  const c = safeCssColor(rawValue);
+  if (!c) return null;
+  return { key, value: c };
+}
+
+/**
  * Validate a full action envelope (`{ actions: [...] }` or a bare array) against
  * the live selected ids. Dispatches per action `type`; invalid actions are
  * dropped. Never throws.
@@ -419,6 +458,9 @@ export function validateActions(raw: unknown, allowedIds: readonly string[]): Ed
     } else if (type === "insertBlock") {
       const spec = validateBlockSpec(item);
       if (spec) out.push({ type: "insertBlock", ...spec });
+    } else if (type === "sceneParam") {
+      const op = validateSceneParamOp(item);
+      if (op) out.push({ type: "sceneParam", ...op });
     }
   }
   return out;

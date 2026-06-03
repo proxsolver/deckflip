@@ -21,7 +21,12 @@ interface InspectorProps {
 const toHex = (v: string) => (/^#[0-9a-fA-F]{6}$/.test(v) ? v : "#ffffff");
 
 export function Inspector({ selection, onPatch, onClose }: InspectorProps) {
-  const textSafe = !!selection.textSafe;
+  // Whether this object holds editable text. Captured per-selection (sticky),
+  // NOT read live: emptying the field flips the payload's textSafe to false,
+  // and if we keyed the textarea off that it would unmount mid-edit, drop focus
+  // to <body>, and let the next Backspace/Delete fall through to "delete the
+  // element". Recomputed only when a different object is selected.
+  const [canEditText, setCanEditText] = useState(!!selection.textSafe);
 
   const [x, setX] = useState(0);
   const [y, setY] = useState(0);
@@ -58,6 +63,7 @@ export function Inspector({ selection, onPatch, onClose }: InspectorProps) {
     setFill(selection.backgroundColor ?? "");
     setBorder(selection.borderColor ?? "");
     setText(selection.text ?? "");
+    setCanEditText(!!selection.textSafe);
     const a = selection.animationName && selection.animationName !== ANIMATION_NONE ? selection.animationName : ANIMATION_NONE;
     setAnim(a);
     // The inline duration/loop aren't surfaced in the payload, so reflect the
@@ -75,7 +81,7 @@ export function Inspector({ selection, onPatch, onClose }: InspectorProps) {
     if (debounce.current) clearTimeout(debounce.current);
     const patch: Patch = { ...pending.current };
     pending.current = {};
-    if (pendingText.current !== null && textSafe) {
+    if (pendingText.current !== null && canEditText) {
       patch.text = pendingText.current;
       pendingText.current = null;
     }
@@ -91,7 +97,7 @@ export function Inspector({ selection, onPatch, onClose }: InspectorProps) {
 
   function queueText(value: string) {
     setText(value);
-    if (loading.current || !textSafe) return;
+    if (loading.current || !canEditText) return;
     pendingText.current = value;
     if (debounce.current) clearTimeout(debounce.current);
     debounce.current = setTimeout(flush, 120);
@@ -190,7 +196,7 @@ export function Inspector({ selection, onPatch, onClose }: InspectorProps) {
         {num("Z", zIndex, setZIndex, "zIndex")}
       </div>
 
-      {textSafe && (
+      {canEditText && (
         <textarea
           className="ip-text"
           value={text}

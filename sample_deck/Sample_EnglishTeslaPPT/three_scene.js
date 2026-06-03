@@ -396,6 +396,100 @@
     setMode: function (name) { this.setStage(name); }, // back-compat alias
   };
 
+  /* =================================================================
+     EDITOR SCENE PARAMS
+     Opt into the HTML-PPT editor's scene-param contract so the AI and
+     the Toolbar's "Scene" panel can tune THIS background animation
+     without touching code. We expose the standard global
+     window.__htmlPptScene = { getParams, setParam }; the editor only
+     ever calls those two methods. Changes apply live and are persisted
+     into <script id="html-ppt-scene"> (kept by the editor's clean-HTML
+     export and re-applied on load) so exported decks keep the look.
+     ================================================================= */
+  const BASE_EXPOSURE = 1.08;
+  const sceneParams = { spinSpeed: 1, particleOpacity: 1, brightness: 1 };
+
+  function clampNum(v, lo, hi) {
+    v = Number(v);
+    if (!isFinite(v)) return null;
+    return Math.max(lo, Math.min(hi, v));
+  }
+  function hexOf(c) { return "#" + c.getHexString(); }
+
+  function persistScene() {
+    try {
+      const cfg = {
+        spinSpeed: sceneParams.spinSpeed,
+        particleOpacity: sceneParams.particleOpacity,
+        brightness: sceneParams.brightness,
+        keyLightColor: hexOf(keyLight.color),
+        fillLightColor: hexOf(fillLight.color),
+      };
+      let el = document.getElementById("html-ppt-scene");
+      if (!el) {
+        el = document.createElement("script");
+        el.type = "application/json";
+        el.id = "html-ppt-scene";
+        document.body.appendChild(el);
+      }
+      el.textContent = JSON.stringify(cfg);
+    } catch (e) { /* persistence is best-effort */ }
+  }
+
+  function applySceneParam(key, value) {
+    switch (key) {
+      case "spinSpeed": {
+        const n = clampNum(value, 0, 3);
+        if (n === null) return false;
+        sceneParams.spinSpeed = n; return true;
+      }
+      case "particleOpacity": {
+        const n = clampNum(value, 0, 1);
+        if (n === null) return false;
+        sceneParams.particleOpacity = n; return true;
+      }
+      case "brightness": {
+        const n = clampNum(value, 0.3, 2);
+        if (n === null) return false;
+        sceneParams.brightness = n;
+        renderer.toneMappingExposure = BASE_EXPOSURE * n;
+        return true;
+      }
+      case "keyLightColor": try { keyLight.color.set(value); return true; } catch (e) { return false; }
+      case "fillLightColor": try { fillLight.color.set(value); return true; } catch (e) { return false; }
+      default: return false;
+    }
+  }
+
+  window.__htmlPptScene = {
+    getParams: function () {
+      return [
+        { key: "spinSpeed", label: "Spin speed", type: "number", value: sceneParams.spinSpeed, min: 0, max: 3, step: 0.1 },
+        { key: "particleOpacity", label: "Particle density", type: "number", value: sceneParams.particleOpacity, min: 0, max: 1, step: 0.05 },
+        { key: "keyLightColor", label: "Key light color", type: "color", value: hexOf(keyLight.color) },
+        { key: "fillLightColor", label: "Fill light color", type: "color", value: hexOf(fillLight.color) },
+        { key: "brightness", label: "Brightness", type: "number", value: sceneParams.brightness, min: 0.3, max: 2, step: 0.05 },
+      ];
+    },
+    setParam: function (key, value) {
+      const ok = applySceneParam(key, value);
+      if (ok) persistScene();
+      return ok;
+    },
+  };
+
+  // Re-apply a look persisted by a previous editing session or export.
+  (function readPersistedScene() {
+    try {
+      const el = document.getElementById("html-ppt-scene");
+      if (!el || !el.textContent) return;
+      const cfg = JSON.parse(el.textContent);
+      ["spinSpeed", "particleOpacity", "brightness", "keyLightColor", "fillLightColor"].forEach(function (k) {
+        if (cfg[k] != null) applySceneParam(k, cfg[k]);
+      });
+    } catch (e) { /* ignore malformed config */ }
+  })();
+
   /* ---------- Pointer parallax ---------- */
   const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
   window.addEventListener("pointermove", function (e) {
@@ -448,7 +542,7 @@
       m.group.scale.setScalar(Math.max(s, 0.0001));
       m.group.visible = m.vis > 0.004;
       if (m.group.visible) {
-        m.group.rotation.y += m.spin0 * cur.spin * 0.016;
+        m.group.rotation.y += m.spin0 * cur.spin * sceneParams.spinSpeed * 0.016;
         m.group.position.y = Math.sin(t * 0.4 + m.base * 6) * 0.12; // gentle float
       }
     });
@@ -459,7 +553,7 @@
     keyLight.position.x = Math.cos(t * 0.2) * 8;
     keyLight.position.z = Math.sin(t * 0.2) * 8 + 2;
     fillLight.position.x = Math.cos(t * 0.2 + Math.PI) * 8;
-    particles.material.opacity = cur.parts;
+    particles.material.opacity = cur.parts * sceneParams.particleOpacity;
     particles.rotation.y += 0.0002;
     particles.rotation.x += 0.0001;
 

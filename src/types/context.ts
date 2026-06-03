@@ -36,7 +36,12 @@ export interface SelectionPayload {
 /** A global background / decoration layer offered by the background picker. */
 export interface BackgroundLayer {
   id: string;
+  /** Human-friendly name shown in the picker (e.g. "Glow / colored light"). */
   label: string;
+  /** One-line hint: what it is + what's editable. Shown dimmed under the label. */
+  hint?: string;
+  /** The raw `tag#id.class` selector, for users who want the technical handle. */
+  selector?: string;
   w: number;
   h: number;
 }
