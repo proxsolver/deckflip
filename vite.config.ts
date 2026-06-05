@@ -15,6 +15,9 @@ import { handleDeckPrompts } from "./api/_generation/prompt-log";
 // Dev-only middleware so `npm run dev` serves the AI endpoints without a separate
 // serverless host. In production the same logic ships as api/ai-edit.ts and
 // api/ai-image.ts.
+
+const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
+
 function jsonPost(
   server: ViteDevServer,
   path: string,
@@ -27,15 +30,26 @@ function jsonPost(
       return;
     }
     let body = "";
-    req.on("data", (chunk) => (body += chunk));
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) {
+        res.statusCode = 413;
+        res.end("Payload Too Large");
+        req.destroy();
+        return;
+      }
+      body += chunk;
+    });
     req.on("end", async () => {
+      if (res.writableEnded) return;
       try {
         const result = await handler(JSON.parse(body || "{}"));
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify(result));
-      } catch (err) {
+      } catch {
         res.statusCode = 400;
-        res.end(JSON.stringify({ error: String((err as Error)?.message ?? err) }));
+        res.end(JSON.stringify({ error: "Bad Request" }));
       }
     });
   });
@@ -75,6 +89,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), aiDevApi()],
+    server: {
+      allowedHosts: ["deckflip.net", ".deckflip.net", "localhost", "127.0.0.1"],
+    },
     resolve: {
       alias: {
         "@shared": resolve(__dirname, "shared"),
