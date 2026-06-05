@@ -104,7 +104,10 @@ function safeFontWeight(value: unknown): string | number | null {
 // Generated/replacement images must be self-contained base64 data URLs — never a
 // remote/script URL. This keeps the AI from injecting an external or javascript:
 // reference, and keeps decks portable (Standalone Export stays self-contained).
-const IMAGE_DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif|svg\+xml);base64,[a-zA-Z0-9+/]+={0,2}$/;
+// avif included: web image search (Unsplash/Pexels/CDNs) commonly serves avif,
+// and the server inlines it as-is — omitting it here silently dropped otherwise
+// valid fetched images.
+const IMAGE_DATA_URL_RE = /^data:image\/(png|jpe?g|webp|gif|svg\+xml|avif);base64,[a-zA-Z0-9+/]+={0,2}$/;
 const MAX_IMAGE_DATA_URL = 10_000_000; // ~10 MB cap
 
 // Animation guards. `animationName` is a strict enum (a shipped preset, or

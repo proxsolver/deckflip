@@ -1,23 +1,26 @@
-// Server-side AI logic. Ported from ai/client.py. Holds the OpenAI key
-// (server-only), runs the validator as the authoritative gate, and returns a
-// safe patch. If OPENAI_API_KEY is absent it returns the deterministic mock
-// patch — the full UI flow works with zero secrets, exactly like the desktop
-// app's mock mode.
+// Server-side AI EDIT logic. Holds the OpenAI key (server-only), runs the
+// validator as the authoritative gate, and returns a safe action envelope
+// (patch | layout | insertBlock | sceneParam). If OPENAI_API_KEY is absent it
+// returns the deterministic mock actions — the full UI flow works with zero
+// secrets, exactly like the desktop app's mock mode.
 
-import { ACTION_ENVELOPE_SCHEMA } from "../shared/patch-schema";
-import { validatePatch, validateActions } from "../shared/validator";
-import { PATCH_KEYS, type PatchOp } from "../shared/patch-keys";
-import { ANIMATION_NONE, ANIMATION_PRESETS, ANIMATION_TIMING_FUNCTIONS } from "../shared/animation-presets";
-import { LAYOUT_VERBS, type EditorAction } from "../shared/actions";
-import { BLOCK_TEMPLATES, BLOCK_TYPES, type BlockType } from "../shared/blocks";
-import { SCENE_PARAMS, SCENE_PARAM_KEYS } from "../shared/scene-params";
-
-type ContextLike = Record<string, unknown> & {
-  id?: string;
-  text?: string;
-  fontSize?: number;
-  w?: number;
-};
+import {
+  ACTION_ENVELOPE_SCHEMA,
+  validatePatch,
+  validateActions,
+  PATCH_KEYS,
+  ANIMATION_NONE,
+  ANIMATION_PRESETS,
+  ANIMATION_TIMING_FUNCTIONS,
+  LAYOUT_VERBS,
+  BLOCK_TEMPLATES,
+  BLOCK_TYPES,
+  SCENE_PARAMS,
+  SCENE_PARAM_KEYS,
+  type EditorAction,
+  type BlockType,
+} from "../../shared/editing";
+import { env, extractResponseText, type ContextLike } from "./common";
 
 export interface AiEditRequest {
   prompt: string;
@@ -25,27 +28,18 @@ export interface AiEditRequest {
   context?: ContextLike;
   /** Multi-object selection; preferred. Each entry carries its own `id`. */
   contexts?: ContextLike[];
-}
-
-export interface AiEditResponse {
-  patches: PatchOp[];
-  message: string;
-  /** true when these patches came from the offline demo/mock engine (no real AI). */
-  mock: boolean;
+  /** Optional design brief from the generation step — the deck's original intent,
+   *  threaded in as memory so edits stay consistent with how the deck was built. */
+  deckBrief?: Record<string, unknown>;
 }
 
 // The unified action envelope returned by the text endpoint (patch | layout |
-// insertBlock). Replaces the bare patch list as the primary shape; the image
-// endpoint still uses AiEditResponse.
+// insertBlock | sceneParam). Replaces the bare patch list as the primary shape;
+// the image endpoint still uses AiEditResponse (see ./image).
 export interface AiActionResponse {
   actions: EditorAction[];
   message: string;
   mock: boolean;
-}
-
-function env(name: string): string | undefined {
-  // Works under Node (Vercel/Netlify functions) and most edge runtimes.
-  return (typeof process !== "undefined" && process.env ? process.env[name] : undefined)?.trim() || undefined;
 }
 
 const PATCH_KEYS_FOR_PROMPT = [...PATCH_KEYS];
@@ -73,7 +67,7 @@ export async function handleAiEdit(req: AiEditRequest): Promise<AiActionResponse
   const baseUrl = (env("OPENAI_BASE_URL") || "https://api.openai.com/v1").replace(/\/+$/, "");
   const timeoutMs = Number(env("HTML_PPT_AI_TIMEOUT") || "45") * 1000;
 
-  const raw = await callOpenAi({ apiKey, model, baseUrl, timeoutMs, prompt, contexts });
+  const raw = await callOpenAi({ apiKey, model, baseUrl, timeoutMs, prompt, contexts, deckBrief: req.deckBrief });
   const message =
     raw && typeof raw === "object" && typeof (raw as Record<string, unknown>).message === "string"
       ? ((raw as Record<string, unknown>).message as string)
@@ -92,6 +86,7 @@ interface CallArgs {
   timeoutMs: number;
   prompt: string;
   contexts: ContextLike[];
+  deckBrief?: Record<string, unknown>;
 }
 
 async function callOpenAi(args: CallArgs): Promise<unknown> {
@@ -120,6 +115,9 @@ async function callOpenAi(args: CallArgs): Promise<unknown> {
 
   const user = {
     request: args.prompt,
+    // Original deck design intent (present for AI-generated decks) so edits stay
+    // consistent with the deck's palette/fonts/voice. Advisory context only.
+    deck_brief: args.deckBrief,
     selected_objects: args.contexts,
     allowed_patch_keys: PATCH_KEYS_FOR_PROMPT,
     animation_presets: [ANIMATION_NONE, ...ANIMATION_PRESETS],
@@ -142,15 +140,22 @@ async function callOpenAi(args: CallArgs): Promise<unknown> {
     ],
   };
 
-  const payload = {
+  // Reasoning models (gpt-5.x / o-series) bill reasoning tokens against the
+  // output budget, so WITHOUT an explicit max_output_tokens the JSON can come back
+  // empty/truncated → "no valid actions" for every edit. Give it room, and ask for
+  // LOW reasoning effort since these are small, fast style/layout edits.
+  const reasoning = /^(gpt-5|o\d)/i.test(args.model);
+  const payload: Record<string, unknown> = {
     model: args.model,
     input: [
       { role: "system", content: system },
       { role: "user", content: JSON.stringify(user) },
     ],
+    max_output_tokens: Number(env("HTML_PPT_AI_MAX_TOKENS") || "16000"),
     text: {
       format: { type: "json_schema", name: "html_editor_actions", schema: ACTION_ENVELOPE_SCHEMA, strict: true },
     },
+    ...(reasoning ? { reasoning: { effort: env("HTML_PPT_AI_REASONING") || "low" } } : {}),
   };
 
   const controller = new AbortController();
@@ -182,27 +187,6 @@ async function callOpenAi(args: CallArgs): Promise<unknown> {
   } catch {
     throw new Error(`AI output was not valid JSON: ${text.slice(0, 1000)}`);
   }
-}
-
-// Tolerant to the various Responses API shapes (port of _extract_response_text).
-function extractResponseText(response: Record<string, unknown>): string {
-  if (typeof response.output_text === "string") return response.output_text;
-  const chunks: string[] = [];
-  const output = Array.isArray(response.output) ? response.output : [];
-  for (const item of output) {
-    if (!item || typeof item !== "object") continue;
-    const obj = item as Record<string, unknown>;
-    if (Array.isArray(obj.content)) {
-      for (const part of obj.content) {
-        if (!part || typeof part !== "object") continue;
-        const p = part as Record<string, unknown>;
-        const t = p.text ?? p.output_text;
-        if (typeof t === "string") chunks.push(t);
-      }
-    }
-    if (typeof obj.text === "string") chunks.push(obj.text);
-  }
-  return chunks.join("").trim();
 }
 
 // Deterministic fallback (port of _mock_patch). Bilingual Korean/English
@@ -393,199 +377,4 @@ function mockPatchFor(
     patch.borderStyle = "dashed";
   }
   return patch;
-}
-
-// ---------------------------------------------------------------------------
-// Image generation — "generate a fancier image" replaces the selected object.
-// Delivered as a patch ({ src | backgroundImage: data-URL }) so it reuses the
-// whole apply/undo/export pipeline. Always returns a self-contained data URL.
-// ---------------------------------------------------------------------------
-
-export interface AiImageRequest {
-  prompt: string;
-  context?: ContextLike & { tag?: string };
-  /** Optional data URL of the current selection, used as an img2img reference. */
-  image?: string;
-}
-
-export async function handleAiImage(req: AiImageRequest): Promise<AiEditResponse> {
-  const prompt = (req?.prompt ?? "").trim();
-  if (!prompt) throw new Error("Prompt is empty.");
-  const ctx = req?.context;
-  if (!ctx || typeof ctx.id !== "string" || !ctx.id) {
-    throw new Error("No selected object context was provided.");
-  }
-  // <img> gets its src swapped; any other box gets a background-image.
-  const key = String(ctx.tag || "").toLowerCase() === "img" ? "src" : "backgroundImage";
-
-  const apiKey = env("OPENAI_API_KEY");
-  const forceMock = /^(1|true|yes|on)$/i.test(env("HTML_PPT_AI_MOCK") || "");
-
-  let dataUrl: string;
-  let mock: boolean;
-  let message: string;
-  if (!apiKey || forceMock) {
-    dataUrl = placeholderImage(prompt);
-    mock = true;
-    message = "Demo mode — inserted a placeholder image (no real AI; set OPENAI_API_KEY to generate with gpt-image-1).";
-  } else {
-    const baseUrl = (env("OPENAI_BASE_URL") || "https://api.openai.com/v1").replace(/\/+$/, "");
-    const timeoutMs = Number(env("HTML_PPT_IMAGE_TIMEOUT") || "120") * 1000;
-    const size = env("HTML_PPT_IMAGE_SIZE") || "1024x1024";
-    const reference = typeof req.image === "string" && req.image.startsWith("data:image/") ? req.image : undefined;
-    dataUrl = await generateImage({ apiKey, baseUrl, timeoutMs, prompt, reference, size });
-    mock = false;
-    message = "Generated image.";
-  }
-
-  const patch = validatePatch({ [key]: dataUrl });
-  if (Object.keys(patch).length === 0) throw new Error("Generated image failed validation.");
-  return { patches: [{ id: ctx.id, patch }], message, mock };
-}
-
-interface ImageGenArgs {
-  apiKey: string;
-  baseUrl: string;
-  timeoutMs: number;
-  prompt: string;
-  reference?: string;
-  size: string;
-}
-
-async function generateImage(args: ImageGenArgs): Promise<string> {
-  const model = env("HTML_PPT_IMAGE_MODEL") || "gpt-image-1";
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), args.timeoutMs);
-  try {
-    let resp: Response;
-    if (args.reference) {
-      // img2img: send the current image to the edits endpoint as multipart.
-      const fd = new FormData();
-      fd.append("model", model);
-      fd.append("prompt", args.prompt);
-      fd.append("size", args.size);
-      fd.append("image", dataUrlToBlob(args.reference), "image.png");
-      resp = await fetch(`${args.baseUrl}/images/edits`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${args.apiKey}` },
-        body: fd,
-        signal: controller.signal,
-      });
-    } else {
-      resp = await fetch(`${args.baseUrl}/images/generations`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${args.apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model, prompt: args.prompt, size: args.size, n: 1 }),
-        signal: controller.signal,
-      });
-    }
-    if (!resp.ok) {
-      const detail = await resp.text().catch(() => "");
-      throw new Error(`OpenAI image API error ${resp.status}: ${detail.slice(0, 800)}`);
-    }
-    const json = (await resp.json()) as { data?: Array<{ b64_json?: string }> };
-    const b64 = json?.data?.[0]?.b64_json;
-    if (!b64) throw new Error("Image API returned no image data.");
-    return `data:image/png;base64,${b64}`;
-  } catch (err) {
-    throw new Error(`Image generation failed: ${String((err as Error)?.message ?? err)}`);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-// A deterministic, clearly-labeled placeholder so the demo visibly "replaces" the
-// object without any AI. Returned as an svg+xml data URL (passes the validator).
-// Prompt-driven palettes so the demo "generates" visibly different images for
-// different prompts (deterministic — same prompt always yields the same image).
-const DEMO_PALETTES: Record<string, [string, string, string]> = {
-  gold: ["#241c10", "#6b5320", "#e8c074"],
-  blue: ["#0a1830", "#15457a", "#4aa8ff"],
-  ocean: ["#021b2e", "#0a6b7a", "#39d0c8"],
-  sunset: ["#2a1030", "#a83265", "#ff9e4a"],
-  forest: ["#08200f", "#1f6b32", "#9bd07a"],
-  red: ["#2a0d10", "#8a1f29", "#ff6b5a"],
-  purple: ["#1a0f2e", "#5a3a8a", "#b98aff"],
-  mono: ["#0c0c0d", "#3a3a40", "#b9b9c2"],
-  warm: ["#2a1810", "#8a4a20", "#e8b06a"],
-  cool: ["#0c1a2a", "#2a5a8a", "#7ec8ff"],
-};
-
-function hashString(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function pickPalette(p: string): [string, string, string] {
-  const map: Array<[RegExp, keyof typeof DEMO_PALETTES]> = [
-    [/(gold|premium|luxury|fancy|골드|금|고급)/, "gold"],
-    [/(ocean|sea|water|wave|바다|물|파도)/, "ocean"],
-    [/(sunset|dusk|dawn|노을|석양)/, "sunset"],
-    [/(forest|nature|plant|green|숲|자연|초록)/, "forest"],
-    [/(red|ruby|빨강|루비)/, "red"],
-    [/(purple|violet|보라)/, "purple"],
-    [/(sky|blue|블루|파랑)/, "blue"],
-    [/(mono|gray|grey|black|white|minimal|흑백|모노|미니멀)/, "mono"],
-    [/(warm|cozy|따뜻)/, "warm"],
-    [/(cool|ice|차가)/, "cool"],
-  ];
-  for (const [re, key] of map) if (re.test(p)) return DEMO_PALETTES[key];
-  const keys = Object.keys(DEMO_PALETTES) as Array<keyof typeof DEMO_PALETTES>;
-  return DEMO_PALETTES[keys[hashString(p) % keys.length]];
-}
-
-// A labeled, prompt-styled placeholder. Not real AI — but visibly different per
-// prompt so the generate→replace flow demos convincingly with no key.
-function placeholderImage(prompt: string): string {
-  const text = (prompt || "AI image").slice(0, 56).replace(/[<>&]/g, " ");
-  const [c0, c1, c2] = pickPalette(prompt.toLowerCase());
-  const minimal = /(minimal|미니멀|flat|clean|simple)/.test(prompt.toLowerCase());
-  const h = hashString(prompt);
-  // Deterministic motif placement from the hash.
-  const cx = 300 + (h % 420);
-  const cy = 360 + ((h >> 9) % 240);
-  const r = 150 + ((h >> 5) % 130);
-  const motif = minimal
-    ? `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${c2}" opacity="0.9"/>`
-    : `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${c2}" opacity="0.22"/>` +
-      `<circle cx="${1024 - cx}" cy="${cy - 60}" r="${r * 0.6}" fill="#ffffff" opacity="0.10"/>` +
-      `<circle cx="${cx + 120}" cy="${cy + 140}" r="${r * 0.4}" fill="${c2}" opacity="0.35"/>`;
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">` +
-    `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
-    `<stop offset="0" stop-color="${c0}"/><stop offset="0.55" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/>` +
-    `</linearGradient><radialGradient id="v" cx="0.5" cy="0.42" r="0.75">` +
-    `<stop offset="0.55" stop-color="#000000" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity="0.45"/>` +
-    `</radialGradient></defs>` +
-    `<rect width="1024" height="1024" fill="url(#g)"/>` +
-    motif +
-    `<rect width="1024" height="1024" fill="url(#v)"/>` +
-    `<rect x="40" y="40" width="150" height="40" rx="20" fill="rgba(0,0,0,0.35)"/>` +
-    `<text x="115" y="67" font-family="Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="2" fill="#fff" text-anchor="middle">AI · DEMO</text>` +
-    `<text x="512" y="900" font-family="Arial, sans-serif" font-size="34" fill="#ffffff" text-anchor="middle">${text}</text>` +
-    `</svg>`;
-  return `data:image/svg+xml;base64,${toBase64(svg)}`;
-}
-
-function toBase64(str: string): string {
-  if (typeof Buffer !== "undefined") return Buffer.from(str, "utf-8").toString("base64");
-  const bytes = new TextEncoder().encode(str);
-  let bin = "";
-  for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin);
-}
-
-function dataUrlToBlob(dataUrl: string): Blob {
-  const comma = dataUrl.indexOf(",");
-  const head = dataUrl.slice(0, comma);
-  const body = dataUrl.slice(comma + 1);
-  const mime = head.match(/data:([^;]+)/)?.[1] || "image/png";
-  const bin = typeof atob !== "undefined" ? atob(body) : Buffer.from(body, "base64").toString("binary");
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new Blob([bytes], { type: mime });
 }

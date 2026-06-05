@@ -117,6 +117,7 @@ body {
 .scene-label { display: flex; align-items: center; font-size: 13px; color: var(--text); }
 .scene-range { width: 100%; accent-color: var(--accent); cursor: pointer; }
 .scene-color { width: 100%; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-input); cursor: pointer; }
+.scene-select { width: 100%; padding: 4px 6px; font: inherit; font-size: 12px; color: var(--text); background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
 .scene-group { padding-top: 2px; }
 .scene-group-head { padding: 7px 10px 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-dim); }
 .scene-toggle { justify-content: center; font-weight: 600; }
@@ -294,3 +295,226 @@ body {
   background: var(--bg-input); border: 1px solid var(--border); border-bottom-width: 2px;
   border-radius: 5px; padding: 2px 7px; font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-dim); white-space: nowrap;
 }
+
+/* ---------- New AI Deck wizard (Apple-style) ---------- */
+.modal.wizard {
+  --w-blue: #0a84ff; --w-blue-hi: #3a9bff;
+  --w-text: #f5f5f7; --w-dim: #86868b; --w-dim2: #a1a1a6;
+  --w-fill: rgba(255, 255, 255, 0.055); --w-fill-hi: rgba(255, 255, 255, 0.10);
+  --w-line: rgba(255, 255, 255, 0.09);
+  width: 600px; max-width: 92vw; max-height: 90vh;
+  display: flex; flex-direction: column;
+  padding: 0; border: none; border-radius: 22px; overflow: hidden;
+  background: linear-gradient(180deg, #242426 0%, #1c1c1e 62%);
+  box-shadow: 0 34px 90px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  color: var(--w-text);
+  font-family: -apple-system, "SF Pro Display", "SF Pro Text", "Inter", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wizard-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 28px 14px; }
+.wizard-brand { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; letter-spacing: 0.01em; color: var(--w-dim2); }
+.wizard-brand svg { color: var(--w-blue); }
+.wizard-progress { display: flex; gap: 6px; }
+.wizard-seg { width: 26px; height: 4px; border-radius: 2px; background: var(--w-fill-hi); transition: background 0.35s ease; }
+.wizard-seg.on { background: var(--w-blue); }
+
+.wizard-body { flex: 1 1 auto; overflow-y: auto; padding: 8px 28px 6px; }
+.wizard-hero { margin: 4px 0 22px; }
+.wizard-hero h2 { margin: 0 0 7px; font-size: 26px; font-weight: 600; letter-spacing: -0.021em; line-height: 1.1; color: var(--w-text); }
+.wizard-hero p { margin: 0; font-size: 14px; line-height: 1.45; color: var(--w-dim2); }
+.wizard-step { display: flex; flex-direction: column; gap: 14px; }
+.wizard-label { font-size: 12px; font-weight: 590; color: var(--w-dim); letter-spacing: 0.01em; margin: 6px 0 -5px; }
+.wizard-label .req { color: #ff9f0a; font-weight: 500; margin-left: 6px; }
+
+.wizard-input, .wizard-textarea {
+  width: 100%; background: var(--w-fill); border: 1px solid var(--w-line); border-radius: 12px;
+  color: var(--w-text); padding: 13px 15px; font-size: 15px; font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.wizard-input::placeholder, .wizard-textarea::placeholder { color: #6e6e73; }
+.wizard-textarea { min-height: 84px; resize: vertical; line-height: 1.5; }
+.wizard-input:focus, .wizard-textarea:focus {
+  outline: none; background: rgba(255, 255, 255, 0.07);
+  border-color: var(--w-blue); box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.25);
+}
+
+.wizard-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wizard-card {
+  position: relative; text-align: left; background: var(--w-fill); border: 1px solid var(--w-line);
+  border-radius: 14px; padding: 14px 16px; cursor: pointer; display: flex; flex-direction: column; gap: 4px;
+  transition: transform 0.12s ease, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.wizard-card:hover { background: var(--w-fill-hi); transform: translateY(-1px); }
+.wizard-card.active { border-color: var(--w-blue); background: rgba(10, 132, 255, 0.12); box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.22); }
+.wizard-card.active::after {
+  content: ""; position: absolute; top: 13px; right: 13px; width: 9px; height: 9px;
+  border-radius: 50%; background: var(--w-blue); box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.25);
+}
+.wizard-card-title { font-size: 14px; font-weight: 600; color: var(--w-text); }
+.wizard-card-hint { font-size: 12px; line-height: 1.35; color: var(--w-dim2); }
+
+.wizard-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.wizard-chip {
+  background: var(--w-fill); border: 1px solid var(--w-line); border-radius: 980px;
+  color: var(--w-dim2); padding: 8px 15px; font-size: 13px; font-weight: 500; cursor: pointer;
+  transition: background 0.14s, color 0.14s, border-color 0.14s, box-shadow 0.14s;
+}
+.wizard-chip:hover { background: var(--w-fill-hi); color: var(--w-text); }
+.wizard-chip.active { background: var(--w-blue); border-color: var(--w-blue); color: #fff; box-shadow: 0 1px 8px rgba(10, 132, 255, 0.4); }
+
+.wizard-advanced { align-self: flex-start; background: none; border: none; color: var(--w-blue-hi); font-size: 13px; font-weight: 500; cursor: pointer; padding: 2px 0; }
+.wizard-advanced:hover { color: var(--w-blue); }
+.linklike { background: none; border: none; color: var(--w-blue-hi); cursor: pointer; font-size: 13px; padding: 0; }
+.linklike:hover { color: var(--w-blue); }
+
+.wizard-summary { list-style: none; margin: 0; padding: 0; border: 1px solid var(--w-line); border-radius: 14px; overflow: hidden; background: var(--w-fill); }
+.wizard-summary li { display: flex; gap: 14px; padding: 11px 16px; border-bottom: 1px solid var(--w-line); font-size: 14px; }
+.wizard-summary li:last-child { border-bottom: none; }
+.wizard-summary b { width: 88px; color: var(--w-dim); font-weight: 500; }
+.wizard-summary span { color: var(--w-text); }
+
+.wizard-uploads { display: flex; flex-direction: column; gap: 8px; }
+.wizard-upload-btn {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 8px;
+  background: var(--w-fill); border: 1px dashed var(--w-line); border-radius: 12px;
+  padding: 10px 15px; font-size: 13px; color: var(--w-dim2); cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.wizard-upload-btn:hover { background: var(--w-fill-hi); border-color: rgba(255, 255, 255, 0.18); }
+.wizard-upload-btn .menu-dim { color: #6e6e73; }
+.wizard-upload-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.wizard-upload-list li { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.wizard-upload-kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--w-dim2); background: var(--w-fill-hi); border-radius: 5px; padding: 2px 7px; }
+.wizard-upload-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--w-text); }
+
+/* Persona — conversational Q&A + inferred profile */
+.wizard-persona-qa { margin: 6px 0 4px; display: flex; flex-direction: column; gap: 8px; }
+.wizard-persona-q { font-size: 14px; color: var(--w-text); font-weight: 500; }
+.wizard-persona-profile { background: var(--w-fill); border: 1px solid var(--w-line); border-radius: 12px; padding: 12px 14px; }
+.wizard-persona-profile b { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--w-dim2); }
+.wizard-persona-profile p { margin: 6px 0 8px; font-size: 13px; color: var(--w-text); line-height: 1.5; }
+
+/* Sample candidates */
+.wizard-sample-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.wizard-sample-empty p { margin: 0; font-size: 13px; color: var(--w-dim2); line-height: 1.5; }
+.wizard-candidates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.wizard-candidate {
+  display: flex; flex-direction: column; gap: 6px; padding: 6px; cursor: pointer;
+  background: var(--w-fill); border: 1px solid var(--w-line); border-radius: 12px;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.wizard-candidate:hover { border-color: rgba(255, 255, 255, 0.22); transform: translateY(-1px); }
+.wizard-candidate.active { border-color: var(--accent, #6aa0ff); box-shadow: 0 0 0 2px var(--accent, #6aa0ff) inset; }
+.wizard-candidate-frame { width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 7px; background: #fff; pointer-events: none; }
+.wizard-candidate-label { font-size: 12px; color: var(--w-text); text-align: center; }
+.wizard-parsing { font-size: 12px; color: var(--w-dim2); margin-top: 2px; }
+
+.wizard-error {
+  display: flex; align-items: center; gap: 12px; margin: 4px 28px 0; padding: 11px 15px;
+  background: rgba(255, 69, 58, 0.14); border: 1px solid rgba(255, 69, 58, 0.5);
+  border-radius: 12px; color: #ff8b80; font-size: 13px;
+}
+.wizard-error span { flex: 1; }
+
+/* Footer — scoped under .modal.wizard to outrank the base .modal .actions rules. */
+.modal.wizard .actions.wizard-actions { display: flex; align-items: center; gap: 10px; margin: 0; padding: 16px 28px 20px; border-top: 1px solid var(--w-line); }
+.modal.wizard .actions.wizard-actions .spacer { flex: 1; }
+.modal.wizard .actions.wizard-actions button {
+  font-family: inherit; font-size: 14px; font-weight: 500; border-radius: 980px;
+  padding: 9px 18px; cursor: pointer; border: 1px solid transparent; color: var(--w-dim2); background: transparent;
+  transition: background 0.15s, color 0.15s, transform 0.1s, box-shadow 0.15s, opacity 0.15s;
+}
+.modal.wizard .actions.wizard-actions button:hover:not(:disabled):not(.primary) { color: var(--w-text); background: var(--w-fill-hi); }
+.modal.wizard .actions.wizard-actions button:active:not(:disabled) { transform: scale(0.97); }
+.modal.wizard .actions.wizard-actions .primary { background: var(--w-blue); border-color: var(--w-blue); color: #fff; font-weight: 600; padding: 9px 22px; box-shadow: 0 1px 10px rgba(10, 132, 255, 0.45); }
+.modal.wizard .actions.wizard-actions .primary:hover:not(:disabled) { background: var(--w-blue-hi); border-color: var(--w-blue-hi); }
+.modal.wizard .actions.wizard-actions .primary:disabled { opacity: 0.4; box-shadow: none; cursor: default; }
+
+.wizard-busy { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; padding: 64px 28px; text-align: center; }
+.wizard-busy-title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; color: var(--w-text); }
+.wizard-busy-sub { font-size: 13px; color: var(--w-dim2); max-width: 320px; line-height: 1.45; }
+.spinner { width: 30px; height: 30px; border: 3px solid var(--w-fill-hi); border-top-color: var(--w-blue); border-radius: 50%; animation: wizard-spin 0.8s linear infinite; }
+@keyframes wizard-spin { to { transform: rotate(360deg); } }
+/* "Generating…" animated trailing dots. */
+.wizard-dots { display: inline-block; margin-left: 1px; }
+.wizard-dots i { font-style: normal; animation: wiz-dot-blink 1.4s infinite both; }
+.wizard-dots i:nth-child(2) { animation-delay: 0.2s; }
+.wizard-dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes wiz-dot-blink { 0%, 80%, 100% { opacity: 0.2; } 40% { opacity: 1; } }
+/* Cycling stage caption (remounts via React key → fade replays) + elapsed clock. */
+.wizard-busy-stage { font-size: 13.5px; font-weight: 500; color: var(--w-blue); min-height: 18px; animation: wizard-fade-in 0.45s ease both; }
+.wizard-busy-time { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--w-dim2); opacity: 0.7; letter-spacing: 0.02em; }
+/* Completion summary (tokens + estimated cost) shown before loading the deck. */
+.wizard-done-check { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--w-fill-hi); color: var(--w-blue); font-size: 24px; font-weight: 700; }
+.wizard-done-msg { font-size: 13.5px; color: var(--w-text); max-width: 340px; line-height: 1.5; }
+.wizard-done-usage { font-variant-numeric: tabular-nums; font-size: 12.5px; color: var(--w-dim2); letter-spacing: 0.01em; }
+.wizard-done .primary { margin-top: 6px; }
+.menu-item-accent { color: var(--accent-hover); font-weight: 600; }
+.menu-item-accent .menu-icon { color: var(--accent); }
+
+/* Wizard step transitions — incoming content slides + fades (direction-aware). */
+.wizard-body { overflow-x: hidden; }
+.wizard-anim { animation: wizard-step-in 0.34s cubic-bezier(0.32, 0.72, 0, 1) both; }
+.wizard-anim.back { animation-name: wizard-step-in-back; }
+@keyframes wizard-step-in { from { opacity: 0; transform: translateX(22px); } to { opacity: 1; transform: none; } }
+@keyframes wizard-step-in-back { from { opacity: 0; transform: translateX(-22px); } to { opacity: 1; transform: none; } }
+.wizard-busy { animation: wizard-fade-in 0.3s ease both; }
+@keyframes wizard-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .wizard-anim, .wizard-busy, .wizard-seg, .wizard-dots i, .wizard-busy-stage { animation: none; transition: none; }
+  .wizard-dots i { opacity: 1; }
+}
+
+/* Card/chip select + tap feedback. */
+.wizard-chip { transition: background 0.14s, color 0.14s, border-color 0.14s, box-shadow 0.14s, transform 0.12s ease; }
+.wizard-card:active, .wizard-chip:active { transform: scale(0.96); }
+.wizard-card:hover:active { transform: scale(0.96); }
+.wizard-card.active, .wizard-chip.active { animation: wiz-pop 0.26s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.wizard-card.active::after { animation: wiz-dot 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+@keyframes wiz-pop { 0% { transform: scale(0.94); } 55% { transform: scale(1.03); } 100% { transform: scale(1); } }
+@keyframes wiz-dot { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .wizard-card, .wizard-chip, .wizard-card.active, .wizard-chip.active, .wizard-card.active::after { animation: none; transition: none; }
+  .wizard-card:active, .wizard-chip:active { transform: none; }
+}
+
+/* Wizard open entrance — panel scales/fades up, backdrop fades in. */
+.modal-backdrop:has(.wizard) { animation: wizard-fade-in 0.28s ease both; }
+.modal.wizard { animation: wizard-open 0.38s cubic-bezier(0.32, 0.72, 0, 1) both; }
+@keyframes wizard-open { from { opacity: 0; transform: scale(0.94) translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop:has(.wizard), .modal.wizard { animation: none; }
+}
+
+/* ---------- Empty canvas (welcome) ---------- */
+.empty-card {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  max-width: 420px; padding: 8px 24px;
+  font-family: -apple-system, "SF Pro Display", "SF Pro Text", "Inter", system-ui, sans-serif;
+  animation: empty-in 0.5s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+.empty-icon {
+  display: flex; align-items: center; justify-content: center; width: 64px; height: 64px;
+  border-radius: 20px; margin-bottom: 22px; color: #fff;
+  background: linear-gradient(160deg, #3a9bff 0%, #0a84ff 100%);
+  box-shadow: 0 12px 30px rgba(10, 132, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.empty-card h2 { margin: 0 0 10px; font-size: 27px; font-weight: 600; letter-spacing: -0.022em; color: #f5f5f7; }
+.empty-card p { margin: 0 0 26px; font-size: 15px; line-height: 1.5; color: #a1a1a6; }
+.empty-cta {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: #0a84ff; color: #fff; border: none; border-radius: 980px;
+  padding: 12px 26px; font-size: 15px; font-weight: 600; font-family: inherit; cursor: pointer;
+  box-shadow: 0 2px 14px rgba(10, 132, 255, 0.5);
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+.empty-cta:hover { background: #3a9bff; box-shadow: 0 4px 20px rgba(10, 132, 255, 0.55); }
+.empty-cta:active { transform: scale(0.97); }
+.empty-link {
+  margin-top: 16px; background: none; border: none; color: #86868b; font-family: inherit;
+  font-size: 13px; cursor: pointer; transition: color 0.15s;
+}
+.empty-link:hover { color: #d1d1d6; text-decoration: underline; }
+@keyframes empty-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .empty-card { animation: none; } }

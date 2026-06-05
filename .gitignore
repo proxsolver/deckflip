@@ -3,10 +3,14 @@ node_modules
 dist
 public/editor-bundle.js
 
+# AI-generated decks (local-dir backend store — see api/storage.ts)
+/generated/
+
 # Env & secrets
 *.local
 .env
 .env.*
+!.env.example
 
 # IDE / editor
 .idea/

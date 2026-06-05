@@ -1,10 +1,9 @@
-// Serverless entry point for AI image generation (web-standard Request/Response).
-// Mirrors api/ai-edit.ts. In dev, vite.config.ts mounts handleAiImage at the same
-// path so it works with no separate backend.
+// Serverless entry point for 3D scene regeneration. Runs on the NODE runtime
+// (not edge): it reuses the generation provider layer in _generate.ts, which
+// transitively imports the node:fs storage seam. In dev, the same handler is
+// mounted at /api/regenerate-scene by vite.config.ts.
 
-import { handleAiImage } from "./_editing/image";
-
-export const config = { runtime: "edge" };
+import { handleRegenerateScene } from "./_generation/scene";
 
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== "POST") {
@@ -12,7 +11,7 @@ export default async function handler(request: Request): Promise<Response> {
   }
   try {
     const body = await request.json();
-    const result = await handleAiImage(body);
+    const result = await handleRegenerateScene(body);
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: { "Content-Type": "application/json" },

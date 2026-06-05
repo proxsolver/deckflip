@@ -1,10 +1,10 @@
-// Serverless entry point for AI image generation (web-standard Request/Response).
-// Mirrors api/ai-edit.ts. In dev, vite.config.ts mounts handleAiImage at the same
-// path so it works with no separate backend.
+// Serverless entry point for deck generation. NOTE: this handler writes to the
+// local-dir backend via node:fs (api/storage.ts), so it needs a Node function
+// runtime — NOT the edge runtime used by api/ai-edit.ts. When a real storage
+// backend replaces api/storage.ts, revisit the runtime choice. In dev, the same
+// handler is mounted at /api/generate by vite.config.ts.
 
-import { handleAiImage } from "./_editing/image";
-
-export const config = { runtime: "edge" };
+import { handleGenerate } from "./_generation/generate";
 
 export default async function handler(request: Request): Promise<Response> {
   if (request.method !== "POST") {
@@ -12,7 +12,7 @@ export default async function handler(request: Request): Promise<Response> {
   }
   try {
     const body = await request.json();
-    const result = await handleAiImage(body);
+    const result = await handleGenerate(body);
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: { "Content-Type": "application/json" },

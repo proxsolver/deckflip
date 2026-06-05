@@ -5,12 +5,12 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import type { EditorTool } from "@/types/messages";
 import type { BackgroundLayer } from "@/types/context";
-import type { LayoutOp, SceneParamOp } from "@shared/actions";
-import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp } from "@shared/scene-params";
-import { BLOCK_TYPES, BLOCK_TEMPLATES, type BlockType } from "@shared/blocks";
+import type { LayoutOp, SceneParamOp } from "@shared/editing";
+import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp, SceneSectionInfo, SceneAssignOp } from "@shared/editing";
+import { BLOCK_TYPES, BLOCK_TEMPLATES, type BlockType } from "@shared/editing";
 import {
   BackIcon, ChevronDown, DuplicateIcon, ExportIcon, FolderIcon, FrontIcon, HelpIcon,
-  LayersIcon, NextIcon, PointerIcon, PrevIcon, RectIcon, RedoIcon, ReloadIcon, SaveIcon,
+  ImageIcon, LayersIcon, NextIcon, PointerIcon, PrevIcon, RectIcon, RedoIcon, ReloadIcon, SaveIcon,
   SparkleIcon, TextIcon, TrashIcon, UndoIcon,
 } from "./icons";
 
@@ -46,6 +46,11 @@ export interface ToolbarProps {
   slide: { current: number; total: number };
   canUndo: boolean;
   canRedo: boolean;
+  /** true when the loaded deck was AI-generated (enables raw-source download). */
+  hasAiSource: boolean;
+  onNewDeck: () => void;
+  onClearCanvas: () => void;
+  onDownloadAiSource: () => void;
   onOpenFolder: () => void;
   onOpenFiles: (files: FileList) => void;
   onToggleEdit: () => void;
@@ -54,6 +59,8 @@ export interface ToolbarProps {
   onSelectLayer: (id: string) => void;
   onListSceneParams: () => Promise<SceneParamInfo[]>;
   onApplySceneParam: (op: SceneParamOp) => void;
+  onListSceneSections: () => Promise<SceneSectionInfo>;
+  onApplySceneAssignment: (op: SceneAssignOp) => void;
   onListBackgroundMotion: () => Promise<BackgroundMotionInfo>;
   onApplyBackgroundMotion: (op: BackgroundMotionOp) => void;
   onPrev: () => void;
@@ -64,6 +71,7 @@ export interface ToolbarProps {
   onSendBack: () => void;
   onLayout: (spec: ToolbarLayoutSpec) => void;
   onInsertBlock: (blockType: BlockType) => void;
+  onInsertImage: (src: string) => void;
   onAiEdit: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -103,12 +111,25 @@ export function Toolbar(props: ToolbarProps) {
   const [sceneOpen, setSceneOpen] = useState(false);
   const [sceneParams, setSceneParams] = useState<SceneParamInfo[]>([]);
   const [bgMotion, setBgMotion] = useState<BackgroundMotionInfo>({ available: false, playing: true, speed: 1 });
+  const [sceneSections, setSceneSections] = useState<SceneSectionInfo>({ available: false, scenes: [], sections: [] });
   const sceneRef = useRef<HTMLDivElement>(null);
 
   const [arrangeOpen, setArrangeOpen] = useState(false);
   const arrangeRef = useRef<HTMLDivElement>(null);
   const [blockOpen, setBlockOpen] = useState(false);
   const blockRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Manual image insert: read the chosen file as a data URL (self-contained) and
+  // hand it to the editor, which drops a movable/deletable <img> on the slide.
+  const onPickImage = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => props.onInsertImage(String(reader.result));
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -147,10 +168,24 @@ export function Toolbar(props: ToolbarProps) {
     const next = !sceneOpen;
     setSceneOpen(next);
     if (next) {
-      const [params, motion] = await Promise.all([props.onListSceneParams(), props.onListBackgroundMotion()]);
+      const [params, motion, sections] = await Promise.all([
+        props.onListSceneParams(),
+        props.onListBackgroundMotion(),
+        props.onListSceneSections(),
+      ]);
       setSceneParams(params);
       setBgMotion(motion);
+      setSceneSections(sections);
     }
+  };
+
+  // Assign a section to a scene and reflect it (the deck crossfades + persists).
+  const setSectionScene = (section: string, sceneName: string) => {
+    setSceneSections((prev) => ({
+      ...prev,
+      sections: prev.sections.map((s) => (s.section === section ? { ...s, sceneName } : s)),
+    }));
+    props.onApplySceneAssignment({ section, sceneName });
   };
 
   // Apply a scene-param change live and reflect the new value in the control.
@@ -215,6 +250,11 @@ export function Toolbar(props: ToolbarProps) {
         </button>
         {menuOpen && (
           <div className="menu">
+            <button className="menu-item menu-item-accent" onClick={() => { setMenuOpen(false); props.onNewDeck(); }}>
+              <span className="menu-icon"><SparkleIcon /></span>
+              New — AI Deck
+            </button>
+            <div className="menu-sep" />
             {menuItem("Open Folder…", <FolderIcon />, props.onOpenFolder)}
             {menuItem("Open Files…", <FolderIcon />, () => inputRef.current?.click())}
             <div className="menu-sep" />
@@ -222,8 +262,10 @@ export function Toolbar(props: ToolbarProps) {
             {menuItem("Export Standalone HTML", <ExportIcon />, props.onExportStandalone, !hasDeck)}
             {menuItem("Export Project", <ExportIcon />, props.onExportProject, !hasDeck)}
             {menuItem("Export HTML Only", <ExportIcon />, props.onExportHtml, !hasDeck)}
+            {props.hasAiSource && menuItem("Download AI source files", <SaveIcon />, props.onDownloadAiSource)}
             <div className="menu-sep" />
             {menuItem("Reload", <ReloadIcon />, props.onReload, !hasDeck)}
+            {menuItem("Clear canvas", <TrashIcon />, props.onClearCanvas, !hasDeck)}
           </div>
         )}
         <input
@@ -302,8 +344,28 @@ export function Toolbar(props: ToolbarProps) {
         {sceneOpen && (
           <div className="menu scene-panel">
             <div className="menu-head">Background animation</div>
-            {sceneParams.length === 0 && !bgMotion.available && (
+            {sceneParams.length === 0 && !bgMotion.available && !sceneSections.available && (
               <div className="menu-empty">This deck has no adjustable background animation.</div>
+            )}
+            {/* Per-section 3D scenes (only when the deck exposes the contract). */}
+            {sceneSections.available && sceneSections.sections.length > 0 && (
+              <div className="scene-group">
+                <div className="scene-group-head">3D scene per section</div>
+                {sceneSections.sections.map((s) => (
+                  <label key={s.section} className="scene-row">
+                    <span className="scene-label">{s.section}</span>
+                    <select
+                      className="scene-select"
+                      value={s.sceneName}
+                      onChange={(e) => setSectionScene(s.section, e.target.value)}
+                    >
+                      {sceneSections.scenes.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
             )}
             {/* Universal CSS-animation controls (any deck). */}
             {bgMotion.available && (
@@ -431,6 +493,11 @@ export function Toolbar(props: ToolbarProps) {
           </div>
         )}
       </div>
+
+      <IconButton title="Insert image (from your computer)" disabled={editDisabled} onClick={() => imageInputRef.current?.click()}>
+        <ImageIcon />
+      </IconButton>
+      <input ref={imageInputRef} type="file" accept="image/*" hidden onChange={onPickImage} />
 
       <span className="divider" />
 

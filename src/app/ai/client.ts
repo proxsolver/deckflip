@@ -2,10 +2,11 @@
 // proxy (/api/ai-edit) and re-runs the validator locally as defense in depth
 // before the patches reach applyPatches.
 
-import { validatePatchList, validateActions } from "@shared/validator";
-import type { PatchOp } from "@shared/patch-keys";
-import type { EditorAction } from "@shared/actions";
+import { validatePatchList, validateActions, sanitizeHtml } from "@shared/editing";
+import type { PatchOp } from "@shared/editing";
+import type { EditorAction } from "@shared/editing";
 import type { SelectedContext } from "@/types/context";
+import type { DesignBrief } from "@shared/generation";
 
 export interface AiResult {
   ops: PatchOp[];
@@ -23,12 +24,16 @@ export interface AiActionResult {
 // Primary text-edit path: returns the validated action envelope (patch | layout
 // | insertBlock). Re-runs the validator client-side (defense in depth) against
 // the live selected ids before anything reaches applyActions.
-export async function requestAiActions(prompt: string, contexts: SelectedContext[]): Promise<AiActionResult> {
+export async function requestAiActions(
+  prompt: string,
+  contexts: SelectedContext[],
+  deckBrief?: DesignBrief
+): Promise<AiActionResult> {
   const ids = contexts.map((c) => c.id).filter((id): id is string => !!id);
   const resp = await fetch("/api/ai-edit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, contexts }),
+    body: JSON.stringify({ prompt, contexts, deckBrief }),
   });
 
   const data = (await resp.json().catch(() => ({}))) as {
@@ -46,6 +51,79 @@ export async function requestAiActions(prompt: string, contexts: SelectedContext
     throw new Error("AI returned no valid changes after validation.");
   }
   return { actions, message: data.message || "AI changes applied.", mock: !!data.mock };
+}
+
+export interface ElementRegenResult {
+  /** New, sanitized inner HTML for the selected element. */
+  html: string;
+  message: string;
+  mock: boolean;
+}
+
+// Scoped element regeneration: ask the AI to REBUILD the selected element's inner
+// HTML from scratch (advanced restyle/restructure). The server sanitizes; we
+// sanitize AGAIN here (defense in depth) before it reaches the editor, which runs
+// a third DOM-allowlist pass. One element, one undo snapshot.
+export async function requestElementRegen(
+  prompt: string,
+  context: SelectedContext,
+  deckBrief?: DesignBrief
+): Promise<ElementRegenResult> {
+  const resp = await fetch("/api/ai-edit-element", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      context: {
+        id: context.id,
+        outerHTML: context.outerHTML,
+        innerText: context.innerText,
+        slideClass: context.slideClass,
+        inlineStyle: context.inlineStyle,
+      },
+      deckBrief,
+    }),
+  });
+  const data = (await resp.json().catch(() => ({}))) as { html?: string; message?: string; error?: string; mock?: boolean };
+  if (!resp.ok || data.error) throw new Error(data.error || `Rebuild failed (${resp.status}).`);
+  const html = sanitizeHtml(String(data.html || ""));
+  if (!html.trim()) throw new Error("Rebuild returned no usable content.");
+  return { html, message: data.message || "Rebuilt the element.", mock: !!data.mock };
+}
+
+// Web image SEARCH: finds REAL photos on the web for EVERY selected object and
+// returns one patch per object (src for <img>, background-image otherwise),
+// inlined server-side as data URLs. Re-validated client-side. This is the default
+// for "paste pictures" intents — distinct from requestAiImage (which generates).
+export async function requestAiImages(
+  prompt: string,
+  contexts: SelectedContext[],
+  deckBrief?: DesignBrief
+): Promise<AiResult> {
+  const ids = contexts.map((c) => c.id).filter((id): id is string => !!id);
+  const resp = await fetch("/api/ai-image-search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      contexts: contexts.map((c) => ({ id: c.id, tag: c.tag, text: c.text })),
+      deckBrief,
+    }),
+  });
+  const data = (await resp.json().catch(() => ({}))) as {
+    patches?: unknown;
+    message?: string;
+    error?: string;
+    mock?: boolean;
+  };
+  if (!resp.ok || data.error) {
+    throw new Error(data.error || `Image search failed (${resp.status}).`);
+  }
+  const ops = validatePatchList({ patches: data.patches }, ids);
+  if (ops.length === 0) {
+    throw new Error("No usable web images were found for the selected objects.");
+  }
+  return { ops, message: data.message || "Pasted web images.", mock: !!data.mock };
 }
 
 // Image generation: returns a patch that swaps src (img) or sets background-image

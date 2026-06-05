@@ -136,6 +136,42 @@ copy from.
 
 ---
 
+## 3. Per-section scenes — a different 3D background per section (optional)
+
+A deck can show a **different scene per section** with smooth crossfades. Build a
+**scene factory** (several named scene builders) plus a **crossfade manager** that
+swaps the active scene when the visible section changes (drive it off your slide
+tracking / an `IntersectionObserver` over `.slide`, grouping slides into sections).
+Crossfade over ~600ms — blend opacity / interpolate; never hard-cut.
+
+Then expose **three more methods** alongside `getParams`/`setParam`, and the
+editor's **Scene** panel shows a *"3D scene per section"* group (a dropdown per
+section). They are optional and additive — omit them for a single-scene deck and
+nothing changes.
+
+```js
+window.__htmlPptScene = {
+  ...getParams, setParam,
+  // The scenes this deck can switch between.
+  listScenes() { return ["nebula", "ribbons", "grid"]; },
+  // Current section -> scene mapping (section is any stable string label).
+  getSectionScenes() { return [ { section: "01", sceneName: "nebula" }, { section: "02", sceneName: "ribbons" } ]; },
+  // Assign a scene to a section: crossfade to it (if that section is visible),
+  // persist the mapping, return true if applied.
+  setSceneForSection(section, sceneName) { /* ... */ return true; },
+};
+```
+
+Persist the section→scene mapping into the same kept `<script id="html-ppt-scene">`
+and re-apply it on load, exactly like params. The editor calls only these three
+methods (`listSceneSections()` / `applySceneAssignment()` in `src/editor/scene.ts`).
+
+To author or replace a deck's scene with the per-section variant from the AI chat,
+use the **3D background** chat mode and ask for "a different animation per section";
+`/api/regenerate-scene` is prompted to emit the factory + crossfade form.
+
+---
+
 ## What the editor does on its side (FYI)
 
 - `listSceneParams()` / `applySceneParam()` in `src/editor/core.ts` call your

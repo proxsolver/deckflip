@@ -62,6 +62,7 @@ export const STATE: EditorState = {
 export const BLOCK_SELECTOR = [
   ".html-ppt-created-text",
   ".html-ppt-created-rect",
+  ".html-ppt-created-image",
   ".contents-item",
   ".family-card",
   ".product-card",

@@ -3,6 +3,8 @@
 // a blob-URL asset map, and the entry HTML is rewritten so it renders inside a
 // same-origin srcdoc iframe.
 
+import type { DeckFiles } from "@shared/generation";
+
 export interface LoadedDeck {
   /** Entry HTML rewritten so asset refs point at blob URLs. Feeds iframe srcdoc. */
   html: string;
@@ -113,6 +115,122 @@ async function buildDeckAsync(files: Map<string, File>, dirHandle?: FileSystemDi
 
 export function releaseDeck(deck: LoadedDeck | null): void {
   deck?.objectUrls.forEach((u) => URL.revokeObjectURL(u));
+}
+
+// --- AI-generated decks ----------------------------------------------------
+
+// Build a LoadedDeck from in-memory file CONTENTS (the AI generator returns the
+// 4 files as strings). Reuses the same blob-URL + rewrite path as a disk-loaded
+// deck, so it renders and edits identically. No dirHandle → Save HTML falls back
+// to download, which matches "files live in the backend; download raw on demand".
+export function buildDeckFromContents(files: DeckFiles): LoadedDeck {
+  const entries: Array<[string, string, string]> = [
+    ["style.css", files.styleCss, "text/css"],
+    ["script.js", files.scriptJs, "text/javascript"],
+  ];
+  if (files.threeSceneJs) entries.push(["three_scene.js", files.threeSceneJs, "text/javascript"]);
+
+  const fileMap = new Map<string, File>();
+  fileMap.set("index.html", new File([files.indexHtml], "index.html", { type: "text/html" }));
+
+  const objectUrls: string[] = [];
+  const urlForPath = new Map<string, string>();
+  const pathForUrl = new Map<string, string>();
+  for (const [path, content, type] of entries) {
+    const file = new File([content], path, { type });
+    fileMap.set(path, file);
+    const url = URL.createObjectURL(file);
+    objectUrls.push(url);
+    urlForPath.set(path, url);
+    pathForUrl.set(url, path);
+  }
+
+  // Image assets (extracted/uploaded) → blob URLs keyed by their deck path, so the
+  // generated HTML's <img src="assets/..."> refs resolve in the srcdoc iframe.
+  for (const asset of files.assets ?? []) {
+    const file = dataUrlToFile(asset.dataUrl, asset.path.split("/").pop() || "image");
+    if (!file) continue;
+    const path = normalizePath(asset.path);
+    fileMap.set(path, file);
+    const url = URL.createObjectURL(file);
+    objectUrls.push(url);
+    urlForPath.set(path, url);
+    pathForUrl.set(url, path);
+  }
+
+  const html = rewriteAssetRefs(files.indexHtml, "index.html", urlForPath);
+  return { html, entryName: "index.html", files: fileMap, objectUrls, pathForUrl };
+}
+
+// data: URL → File (for in-memory deck assets). Null on malformed input.
+function dataUrlToFile(dataUrl: string, name: string): File | null {
+  const m = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(dataUrl || "");
+  if (!m) return null;
+  const mime = m[1] || "application/octet-stream";
+  try {
+    let bytes: Uint8Array;
+    if (m[2]) {
+      const bin = atob(m[3]);
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    } else {
+      bytes = new TextEncoder().encode(decodeURIComponent(m[3]));
+    }
+    return new File([bytes as unknown as BlobPart], name, { type: mime });
+  } catch {
+    return null;
+  }
+}
+
+// Swap ONE asset file's contents in a live deck (e.g. three_scene.js after a 3D
+// regeneration), preserving every other asset. Creates a fresh blob URL for the
+// new content, points the deck's rewritten HTML at it (string-swap of the old
+// blob URL), and revokes the old one. Returns a new LoadedDeck; reloading the
+// iframe with its `html` re-runs the swapped file. The deck must already
+// reference `relPath` as an asset (it had this file before).
+export function replaceDeckAsset(
+  deck: LoadedDeck,
+  relPath: string,
+  content: string,
+  type = "text/javascript"
+): LoadedDeck {
+  const path = normalizePath(relPath);
+  const oldUrl = [...deck.pathForUrl.entries()].find(([, p]) => p === path)?.[0];
+
+  const file = new File([content], path.split("/").pop() || path, { type });
+  const newUrl = URL.createObjectURL(file);
+
+  const files = new Map(deck.files);
+  files.set(path, file);
+  const pathForUrl = new Map(deck.pathForUrl);
+  let objectUrls = deck.objectUrls.slice();
+  let html = deck.html;
+
+  if (oldUrl) {
+    URL.revokeObjectURL(oldUrl);
+    pathForUrl.delete(oldUrl);
+    objectUrls = objectUrls.filter((u) => u !== oldUrl);
+    html = html.split(oldUrl).join(newUrl);
+  }
+  pathForUrl.set(newUrl, path);
+  objectUrls.push(newUrl);
+
+  return { ...deck, files, pathForUrl, objectUrls, html };
+}
+
+// Trigger a download for each raw file (sequential so the browser doesn't drop
+// the later ones). Lets a user pull the generated source even though it normally
+// lives only in the backend.
+export function downloadDeckFiles(files: DeckFiles): void {
+  const out: Array<[string, string]> = [
+    ["index.html", files.indexHtml],
+    ["style.css", files.styleCss],
+    ["script.js", files.scriptJs],
+  ];
+  if (files.threeSceneJs) out.push(["three_scene.js", files.threeSceneJs]);
+  out.forEach(([name, content], i) => {
+    setTimeout(() => downloadHtml(content, name), i * 250);
+  });
 }
 
 // --- Save / export -------------------------------------------------------

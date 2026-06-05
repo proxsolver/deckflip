@@ -1,8 +1,8 @@
-// Serverless entry point for AI image generation (web-standard Request/Response).
-// Mirrors api/ai-edit.ts. In dev, vite.config.ts mounts handleAiImage at the same
-// path so it works with no separate backend.
+// Serverless entry point for web image SEARCH (find real photos for one or many
+// selected objects and inline them). Mirrors api/ai-image.ts. In dev,
+// vite.config.ts mounts handleAiImageSearch at the same path.
 
-import { handleAiImage } from "./_editing/image";
+import { handleAiImageSearch } from "./_editing/image";
 
 export const config = { runtime: "edge" };
 
@@ -12,7 +12,7 @@ export default async function handler(request: Request): Promise<Response> {
   }
   try {
     const body = await request.json();
-    const result = await handleAiImage(body);
+    const result = await handleAiImageSearch(body);
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: { "Content-Type": "application/json" },

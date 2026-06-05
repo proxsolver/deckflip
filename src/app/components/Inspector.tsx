@@ -5,9 +5,9 @@
 // and three color controls. No palette grids / apply buttons / toggles.
 
 import { useEffect, useRef, useState } from "react";
-import type { Patch } from "@shared/patch-keys";
-import { ANIMATION_NONE, ANIMATION_PRESETS, ANIMATION_DEFAULTS } from "@shared/animation-presets";
-import type { AnimationPreset } from "@shared/animation-presets";
+import type { Patch } from "@shared/editing";
+import { ANIMATION_NONE, ANIMATION_PRESETS, ANIMATION_DEFAULTS } from "@shared/editing";
+import type { AnimationPreset } from "@shared/editing";
 import type { SelectionPayload } from "@/types/context";
 
 type ColorKey = "color" | "backgroundColor" | "borderColor";

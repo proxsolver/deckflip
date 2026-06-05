@@ -83,3 +83,36 @@ export interface BackgroundMotionOp {
   speed?: number;
   playing?: boolean;
 }
+
+// --- per-section 3D scenes (optional, additive deck contract) ---------------
+//
+// A deck MAY expose, alongside getParams/setParam, three more methods so the
+// editor can assign a DIFFERENT 3D scene per section with smooth crossfades:
+//
+//   window.__htmlPptScene = {
+//     ...getParams/setParam,
+//     listScenes(): string[],                                   // available scene names
+//     getSectionScenes(): Array<{ section: string; sceneName: string }>, // current mapping
+//     setSceneForSection(section: string, sceneName: string): boolean,   // assign + crossfade + persist
+//   }
+//
+// The deck owns the scene factory + crossfade manager and persists the mapping
+// into its kept <script id="html-ppt-scene">. Decks without these methods report
+// `available:false` and the editor hides the per-section UI (single-scene decks
+// keep working unchanged). The editor only ever calls these vetted methods.
+
+/** Live per-section scene state as reported by a deck's controller. */
+export interface SceneSectionInfo {
+  /** True when the deck exposes the per-section scene methods. */
+  available: boolean;
+  /** Scene names the deck can switch between. */
+  scenes: string[];
+  /** Current section → scene assignments. */
+  sections: Array<{ section: string; sceneName: string }>;
+}
+
+/** Assign one section to one scene (the editor relays; the deck crossfades). */
+export interface SceneAssignOp {
+  section: string;
+  sceneName: string;
+}

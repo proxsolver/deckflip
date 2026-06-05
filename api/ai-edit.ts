@@ -2,7 +2,7 @@
 // Cloudflare Workers, Netlify Edge). For Node-only function runtimes, wrap
 // handleAiEdit() with that platform's req/res adapter instead.
 
-import { handleAiEdit } from "./_handler";
+import { handleAiEdit } from "./_editing/handler";
 
 export const config = { runtime: "edge" };
 

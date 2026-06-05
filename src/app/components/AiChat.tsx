@@ -6,6 +6,25 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { SparkleIcon, SendIcon, ImageIcon } from "./icons";
 
+// Small inline cube glyph for the "3D scene" mode toggle (no shared icon yet).
+function CubeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 2 21 7v10l-9 5-9-5V7z" />
+      <path d="M12 2v20M3 7l9 5 9-5" />
+    </svg>
+  );
+}
+
+// Wand glyph for the "rebuild element from scratch" mode toggle.
+function WandIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M15 4V2M15 10V8M11 6H9M21 6h-2M18 9l-1.5-1.5M18 3l-1.5 1.5M3 21l9-9M12.5 8.5 15.5 11.5" />
+    </svg>
+  );
+}
+
 export interface ChatMsg {
   id: number;
   role: "user" | "ai" | "error";
@@ -16,7 +35,10 @@ export interface ChatMsg {
 interface AiChatProps {
   subtitle: string;
   onClose: () => void;
-  runAi: (prompt: string, opts?: { image?: boolean }) => Promise<{ message: string; keys: string[]; mock: boolean }>;
+  runAi: (
+    prompt: string,
+    opts?: { image?: boolean; sceneRegen?: boolean; elementRegen?: boolean }
+  ) => Promise<{ message: string; keys: string[]; mock: boolean }>;
   /** Identifies the current object/selection; its own thread is shown. "" = nothing selected. */
   threadKey: string;
   /** Messages for the current threadKey (owned by the parent, so they persist across switches). */
@@ -39,22 +61,59 @@ const STYLE_PROMPTS = [
   "이 박스를 더 고급스럽게",
 ];
 const IMAGE_PROMPTS = [
-  "generate a fancier version",
-  "replace with a minimalist illustration",
-  "make it photorealistic",
-  "이미지를 더 멋지게",
+  "paste a real photo for each box",
+  "find an official product image",
+  "add a relevant photo",
+  "각 박스에 어울리는 사진 넣어줘",
+];
+// Scene-mode starters: these REGENERATE the 3D background as new animation code
+// (not the sceneParam knobs, which only retune the existing motion).
+const SCENE_PROMPTS = [
+  "make it a totally different animation",
+  "flowing ribbons instead of particles",
+  "calm, slow drifting fog",
+  "완전히 다른 3D 배경 애니메이션으로",
+];
+// Rebuild-mode starters: these REGENERATE the selected element's inner HTML from
+// scratch (advanced restyle/restructure), sanitized + scoped to that one node.
+const REBUILD_PROMPTS = [
+  "redesign this as a glassy stat card",
+  "turn this into a clean 3-column layout",
+  "make this a bold quote with a citation",
+  "이 요소를 처음부터 고급스럽게 다시 디자인",
 ];
 
-// Natural-language fallback so a typed "generate a fancier image" routes to image
-// generation even without flipping the toggle.
+// Natural-language fallback so a typed "paste pictures for each box" routes to the
+// web image-search path even without flipping the toggle. Verb (incl. paste/add/
+// find/insert) + an image noun, or the Korean cues.
 const IMAGE_INTENT_RE =
-  /\b(generate|create|draw|render|imagine)\b.*\b(image|picture|photo|illustration|art|version|background)\b|그려|이미지|사진|일러스트/i;
+  /\b(generate|create|draw|render|imagine|paste|insert|add|find|fetch|put|place|search|get)\b.*\b(image|picture|photo|illustration|art|logo|icon|background)\b|그려|이미지|사진|일러스트|로고|아이콘/i;
+
+// Conservative auto-route for "regenerate the 3D background animation" — requires
+// BOTH a 3D/scene noun AND a change/new cue, so ordinary object edits ("make this
+// bigger") and background-COLOR tweaks don't trip it. The explicit 3D toggle is
+// the primary path; this catches the obvious phrasings. Note: once a scene has
+// been regenerated, the panel sticks in 3D mode (see sendPrompt) so follow-ups
+// like "make it fit a car brand" keep regenerating even without a 3D keyword.
+const SCENE_INTENT_RE =
+  /(?=.*(\b3d\b|three\.?js|입체|\b씬\b|\bscene\b))(?=.*(다르|딴|새로|새롭|완전히|재생성|재구성|재생|다시|바꾸|바꿔|갈아|교체|생성|만들|different|another|\bnew\b|fresh|regenerat|recreat|remake|\bredo\b|redesign|reimagin|reinvent|replace|again))/i;
+
+// "Rebuild this element from scratch" intent — explicit rebuild/redesign verbs so
+// it doesn't trip on ordinary tweaks. The wand toggle is the primary path.
+const REBUILD_INTENT_RE =
+  /\b(rebuild|re-?design|restructure|re-?make|overhaul|revamp|from scratch)\b|재설계|재구성|처음부터|새로 ?만들|싹 ?바꿔/i;
 
 export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend, onResolveThreadKey }: AiChatProps) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [demo, setDemo] = useState(false);
   const [imageMode, setImageMode] = useState(false);
+  // "3D scene" mode: prompts regenerate the deck's three_scene.js as brand-new
+  // animation code. Mutually exclusive with image mode.
+  const [sceneMode, setSceneMode] = useState(false);
+  // "Rebuild" mode: prompts regenerate the selected element's inner HTML from
+  // scratch. Mutually exclusive with image/scene modes.
+  const [rebuildMode, setRebuildMode] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -66,14 +125,24 @@ export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend
     // Upgrade to the durable marker-based key so this conversation persists past
     // reload/undo; the result lands on this thread even if the user switches.
     const key = (await onResolveThreadKey()) || threadKey;
-    const image = forceImage ?? (imageMode || IMAGE_INTENT_RE.test(prompt));
+    // Precedence: scene regen (global) → element rebuild (one object) → image search.
+    const sceneRegen = sceneMode || SCENE_INTENT_RE.test(prompt);
+    const elementRegen = !sceneRegen && (rebuildMode || REBUILD_INTENT_RE.test(prompt));
+    const image = !sceneRegen && !elementRegen && (forceImage ?? (imageMode || IMAGE_INTENT_RE.test(prompt)));
     onAppend(key, { role: "user", text: prompt });
     setInput("");
     setBusy(true);
     try {
-      const { message, keys, mock } = await runAi(prompt, { image });
+      const { message, keys, mock } = await runAi(prompt, { image, sceneRegen, elementRegen });
       setDemo(mock);
       onAppend(key, { role: "ai", text: message, keys });
+      // Once a 3D background has been regenerated, STAY in 3D mode: follow-ups
+      // ("make it fit a car brand", "이 스타일보다 다시") are almost always more
+      // regeneration, not object edits — so don't fall back to sceneParam tuning.
+      if (keys?.includes("scene:regenerated")) {
+        setSceneMode(true);
+        setImageMode(false);
+      }
     } catch (err) {
       onAppend(key, { role: "error", text: (err as Error).message });
     } finally {
@@ -105,15 +174,23 @@ export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend
 
       <div className="ai-messages">
         {!threadKey && (
-          <div className="ai-empty">Select an object in the deck to chat about it. Each object keeps its own history.</div>
+          <div className="ai-empty">
+            {sceneMode
+              ? "3D mode is on. Click any object in the deck, then ask again to regenerate the 3D background (the selection itself isn't used for 3D changes)."
+              : "Select an object in the deck to chat about it. Each object keeps its own history."}
+          </div>
         )}
         {threadKey && messages.length === 0 && (
           <div className="ai-empty">
-            {imageMode
-              ? "Generate an image to replace the selected object — or try one:"
-              : "Describe a change to the selected object — or try one:"}
+            {sceneMode
+              ? "Regenerate the deck's 3D background as a brand-new animation — or try one:"
+              : rebuildMode
+                ? "Rebuild the selected object from scratch (advanced redesign) — or try one:"
+                : imageMode
+                  ? "Find & paste real web images for the selected object(s) — or try one:"
+                  : "Describe a change to the selected object — or try one:"}
             <div className="ai-examples">
-              {(imageMode ? IMAGE_PROMPTS : STYLE_PROMPTS).map((ex) => (
+              {(sceneMode ? SCENE_PROMPTS : rebuildMode ? REBUILD_PROMPTS : imageMode ? IMAGE_PROMPTS : STYLE_PROMPTS).map((ex) => (
                 <button key={ex} className="ai-chip" disabled={busy} onClick={() => sendPrompt(ex)}>
                   {ex}
                 </button>
@@ -132,7 +209,9 @@ export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend
         {busy && (
           <div className="ai-msg ai">
             <div className="ai-bubble ai-typing">
-              {imageMode && <span className="ai-gen-note">Generating image…</span>}
+              {sceneMode && <span className="ai-gen-note">Regenerating the 3D background…</span>}
+              {!sceneMode && rebuildMode && <span className="ai-gen-note">Rebuilding the element…</span>}
+              {!sceneMode && !rebuildMode && imageMode && <span className="ai-gen-note">Searching the web for images…</span>}
               <span /><span /><span />
             </div>
           </div>
@@ -143,18 +222,46 @@ export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend
       <div className="ai-input">
         <button
           className={`ai-mode${imageMode ? " active" : ""}`}
-          title={imageMode ? "Image generation: ON — prompts replace the object with a generated image" : "Switch to image generation"}
+          title={imageMode ? "Web images: ON — prompts find & paste real photos into the selected object(s)" : "Switch to web image search"}
           aria-pressed={imageMode}
           disabled={busy || !threadKey}
-          onClick={() => setImageMode((v) => !v)}
+          onClick={() => { setImageMode((v) => !v); setSceneMode(false); setRebuildMode(false); }}
         >
           <ImageIcon />
+        </button>
+        <button
+          className={`ai-mode${rebuildMode ? " active" : ""}`}
+          title={rebuildMode ? "Rebuild: ON — prompts redesign the selected object's content from scratch (sanitized, one undo step)" : "Switch to rebuild-from-scratch"}
+          aria-pressed={rebuildMode}
+          disabled={busy || !threadKey}
+          onClick={() => { setRebuildMode((v) => !v); setImageMode(false); setSceneMode(false); }}
+        >
+          <WandIcon />
+        </button>
+        <button
+          className={`ai-mode${sceneMode ? " active" : ""}`}
+          title={sceneMode ? "3D background: ON — prompts regenerate the moving 3D/canvas background as a brand-new animation" : "Switch to 3D background regeneration"}
+          aria-pressed={sceneMode}
+          disabled={busy || !threadKey}
+          onClick={() => { setSceneMode((v) => !v); setImageMode(false); setRebuildMode(false); }}
+        >
+          <CubeIcon />
         </button>
         <textarea
           autoFocus
           rows={1}
           value={input}
-          placeholder={!threadKey ? "Select an object first…" : imageMode ? "Describe the image to generate…" : "Ask AI to edit…"}
+          placeholder={
+            !threadKey
+              ? "Select an object first…"
+              : sceneMode
+                ? "Describe the new 3D background animation…"
+                : rebuildMode
+                  ? "Describe the new design for this object…"
+                  : imageMode
+                    ? "Describe the photo to find on the web…"
+                    : "Ask AI to edit…"
+          }
           disabled={busy || !threadKey}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}

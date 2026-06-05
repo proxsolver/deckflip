@@ -9,24 +9,39 @@
 //  - getCleanHtml strips every editor artifact before export;
 //  - Edit-OFF is a fully clean presentation view.
 
-import type { Patch, PatchOp } from "@shared/patch-keys";
+import type { Patch, PatchOp } from "@shared/editing";
 import type { SelectionPayload, SelectedContext, TextNodeInfo, BackgroundLayer } from "@/types/context";
 import type { EditorTool } from "@/types/messages";
 import { emit } from "./events";
 import { STATE, BLOCK_SELECTOR, NEVER_SELECT_SELECTOR, BACKGROUND_SELECTOR } from "./state";
 import { saveState, undo as historyUndo, redo as historyRedo, resetHistory } from "./history";
+import { presetFromKeyframe } from "@shared/editing";
+import type { EditorAction, LayoutOp, SceneParamOp } from "@shared/editing";
+import { BLOCK_TEMPLATES, BLOCK_BASE_CSS, type BlockType } from "@shared/editing";
+import { sanitizeHtml, ALLOWED_TAGS, DANGEROUS_TAGS, ALLOWED_ATTRS } from "@shared/editing";
+import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp, SceneSectionInfo, SceneAssignOp } from "@shared/editing";
+// Extracted leaf modules (one-directional — they never import core).
 import {
-  ANIMATION_NONE,
-  ANIMATION_CSS,
-  ANIMATION_DEFAULTS,
-  ANIMATION_PRESET_SET,
-  keyframeNameFor,
-  presetFromKeyframe,
-  type AnimationPreset,
-} from "@shared/animation-presets";
-import type { EditorAction, LayoutOp, SceneParamOp } from "@shared/actions";
-import { BLOCK_TEMPLATES, BLOCK_BASE_CSS, type BlockType } from "@shared/blocks";
-import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp } from "@shared/scene-params";
+  computedNumber,
+  px,
+  cssLength,
+  cssPxNumber,
+  isMediaElement,
+  colorLooksVisible,
+  borderLooksVisible,
+  normalizedTextNodeValue,
+  isEditorUi,
+} from "./dom-utils";
+import { textNodesFor, isEditableTextElement, getEditableText, setEditableText } from "./text-nodes";
+import { applyAnimation } from "./animation";
+import {
+  listSceneParams,
+  applySceneParamInternal,
+  listBackgroundMotion,
+  applyBackgroundMotion,
+  listSceneSections,
+  applySceneAssignment,
+} from "./scene";
 
 // Durable per-element marker for anchoring AI chat threads. Deliberately NOT a
 // `data-html-ppt-*` name so getCleanHtml keeps it — it survives undo (it's in the
@@ -34,54 +49,7 @@ import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp } from "@
 // chatted about (not on mere selection), so clicks never mutate the deck.
 const AI_ID_ATTR = "data-ai-id";
 
-// ---------------------------------------------------------------------------
-// Pure helpers
-// ---------------------------------------------------------------------------
-
-function computedNumber(value: unknown, fallback = 0): number {
-  const n = Number.parseFloat(String(value));
-  return Number.isFinite(n) ? n : fallback;
-}
-
-function px(value: unknown): string {
-  return `${Math.round(Number(value) || 0)}px`;
-}
-
-function cssLength(value: unknown, defaultUnit = "px"): string {
-  if (value == null) return "";
-  if (typeof value === "number") return `${value}${defaultUnit}`;
-  const text = String(value).trim();
-  if (!text) return "";
-  if (/^-?\d+(\.\d+)?$/.test(text)) return `${text}${defaultUnit}`;
-  return text;
-}
-
-function cssPxNumber(value: unknown, fallback = 0): number {
-  if (value === "auto" || value === "" || value == null) return fallback;
-  return computedNumber(value, fallback);
-}
-
-function isMediaElement(el: Element | null): boolean {
-  return !!(el && ["IMG", "CANVAS", "SVG", "VIDEO", "IFRAME"].includes(el.tagName));
-}
-
-function colorLooksVisible(value: string | null | undefined): boolean {
-  if (!value) return false;
-  const v = String(value).trim().toLowerCase();
-  return !!v && v !== "transparent" && v !== "rgba(0, 0, 0, 0)" && v !== "rgba(0,0,0,0)";
-}
-
-function borderLooksVisible(cs: CSSStyleDeclaration): boolean {
-  const widths = [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].map(
-    (v) => Number.parseFloat(v) || 0
-  );
-  const styles = [cs.borderTopStyle, cs.borderRightStyle, cs.borderBottomStyle, cs.borderLeftStyle];
-  return widths.some((w) => w > 0) && ["solid", "dashed", "dotted", "double"].some((s) => styles.includes(s));
-}
-
-function normalizedTextNodeValue(node: Node): string {
-  return (node.textContent || "").replace(/\s+/g, " ").trim();
-}
+// Pure helpers (computedNumber/px/cssLength/isMediaElement/…) live in ./dom-utils.
 
 // ---------------------------------------------------------------------------
 // Overlay UI
@@ -167,11 +135,6 @@ function toast(message: unknown): void {
     t.style.display = "none";
   }, 1800);
   log(message);
-}
-
-function isEditorUi(el: EventTarget | null): boolean {
-  const node = el as Element | null;
-  return !!(node && node.closest && node.closest('[data-html-ppt-editor="true"]'));
 }
 
 // ---------------------------------------------------------------------------
@@ -299,86 +262,8 @@ function localRect(el: Element): LocalRect {
   return { x: r.left - sr.left, y: r.top - sr.top, w: r.width, h: r.height };
 }
 
-function isForbiddenTextNodeParent(el: Element | null): boolean {
-  return !!(el && el.closest && el.closest('script, style, noscript, template, [data-html-ppt-editor="true"]'));
-}
-
-// Meaningful text nodes of an element (skipping script/style/forbidden parents).
-// `includeEmpty` keeps now-empty/whitespace-only nodes too — used only as a
-// fallback when WRITING text into an element the user just cleared, so an
-// emptied box stays editable (its text node still exists, just blank). The
-// selection/text-safety heuristics keep the default (non-empty) behavior.
-function textNodesFor(el: Element | null, includeEmpty = false): Text[] {
-  if (!el || isMediaElement(el)) return [];
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
-    acceptNode(node: Node): number {
-      const parent = node.parentElement;
-      if (!parent || isForbiddenTextNodeParent(parent)) return NodeFilter.FILTER_REJECT;
-      const value = (node.textContent || "").replace(/\s+/g, " ").trim();
-      if (value) return NodeFilter.FILTER_ACCEPT;
-      if (!includeEmpty) return NodeFilter.FILTER_REJECT;
-      // Fallback (writing into a just-cleared element): accept an empty node ONLY
-      // if it's a real content slot, never inter-element indentation whitespace.
-      // Structural whitespace sits beside an element sibling (e.g. the newlines
-      // around a title's inner <span>); an emptied content node is the lone text
-      // of a leaf. This keeps re-typed text in the originally-styled node so a
-      // cleared title comes back at its real size, not the container default.
-      const siblings = node.parentNode ? node.parentNode.childNodes : null;
-      if (siblings) {
-        for (let i = 0; i < siblings.length; i++) {
-          if (siblings[i].nodeType === 1) return NodeFilter.FILTER_REJECT;
-        }
-      }
-      return NodeFilter.FILTER_ACCEPT;
-    },
-  });
-  const nodes: Text[] = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode as Text);
-  return nodes;
-}
-
-function isTextSafe(el: Element | null): boolean {
-  if (!el || isMediaElement(el)) return false;
-  return textNodesFor(el).length > 0;
-}
-
-function isEditableTextElement(el: Element | null): boolean {
-  return isTextSafe(el);
-}
-
-function getEditableText(el: Element | null): string {
-  if (!el) return "";
-  return textNodesFor(el).map(normalizedTextNodeValue).filter(Boolean).join("\n");
-}
-
-function setTextNodePreservingOuterWhitespace(node: Node, value: string): void {
-  const original = node.textContent || "";
-  const leading = (original.match(/^\s*/) || [""])[0];
-  const trailing = (original.match(/\s*$/) || [""])[0];
-  node.textContent = leading + String(value ?? "") + trailing;
-}
-
-function setEditableText(el: Element | null, value: string): boolean {
-  if (!el || isMediaElement(el)) return false;
-  // Prefer the meaningful text nodes (preserves nested tags + line mapping).
-  // If the element was just emptied it has none, so fall back to its now-blank
-  // text nodes so the user can type text back in instead of being stuck.
-  let nodes = textNodesFor(el);
-  if (!nodes.length) nodes = textNodesFor(el, true);
-  if (!nodes.length) return false;
-  const lines = String(value).replace(/\r\n/g, "\n").split("\n");
-  nodes.forEach((node, index) => {
-    setTextNodePreservingOuterWhitespace(node, index < lines.length ? lines[index] : "");
-  });
-  if (lines.length > nodes.length) {
-    const extra = lines.slice(nodes.length).join(" ");
-    if (extra.trim()) {
-      const last = nodes[nodes.length - 1];
-      setTextNodePreservingOuterWhitespace(last, normalizedTextNodeValue(last) + " " + extra.trim());
-    }
-  }
-  return true;
-}
+// Text-node discipline (textNodesFor/setEditableText/getEditableText/…) lives in
+// ./text-nodes.
 
 // ---------------------------------------------------------------------------
 // Payload / context
@@ -528,115 +413,9 @@ function selectById(id: string): boolean {
   return selectElement(el, { raw: true });
 }
 
-// ---------------------------------------------------------------------------
-// Scene parameters — tuning the deck's 3D / canvas background animation.
-// The motion is drawn by the deck's own JS (e.g. Three.js), which the editor
-// never touches. Instead a deck opts in by exposing window.__htmlPptScene with
-// getParams()/setParam() (see shared/scene-params.ts). We only ever call those
-// two vetted methods; the deck owns applying + persisting the change.
-// ---------------------------------------------------------------------------
-
-interface DeckSceneController {
-  getParams?: () => SceneParamInfo[];
-  setParam?: (key: string, value: number | string) => boolean;
-}
-
-function deckScene(): DeckSceneController | null {
-  const s = (window as unknown as { __htmlPptScene?: DeckSceneController }).__htmlPptScene;
-  return s && typeof s === "object" ? s : null;
-}
-
-// Live list of tunable params, or [] when this deck exposes no scene controller
-// (the shell hides the Scene panel in that case).
-function listSceneParams(): SceneParamInfo[] {
-  const s = deckScene();
-  if (!s || typeof s.getParams !== "function") return [];
-  try {
-    const list = s.getParams();
-    return Array.isArray(list) ? list : [];
-  } catch {
-    return [];
-  }
-}
-
-function applySceneParamInternal(op: SceneParamOp): boolean {
-  const s = deckScene();
-  if (!s || typeof s.setParam !== "function") return false;
-  try {
-    return s.setParam(op.key, op.value) !== false;
-  } catch {
-    return false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Universal CSS-animation control. Unlike scene params this needs NO deck
-// cooperation: we find the background/decoration layers that are running a CSS
-// @keyframes animation and write inline `animation-duration` (scaled from the
-// deck's ORIGINAL timing, remembered per element so changes never compound) and
-// `animation-play-state`. Inline styles on body-level layers are kept by
-// getCleanHtml, so the chosen speed/pause survives export.
-// ---------------------------------------------------------------------------
-
-const BG_MOTION_BASE = new WeakMap<HTMLElement, string>();
-let bgMotionSpeed = 1;
-
-function animatedBgLayers(): HTMLElement[] {
-  const seen = new Set<Element>();
-  const out: HTMLElement[] = [];
-  document.querySelectorAll<HTMLElement>(BACKGROUND_SELECTOR).forEach((el) => {
-    if (seen.has(el) || el.closest(".slide") || isEditorUi(el)) return;
-    seen.add(el);
-    const cs = window.getComputedStyle(el);
-    if (cs.display === "none") return;
-    if (!cs.animationName || cs.animationName === "none") return;
-    out.push(el);
-  });
-  return out;
-}
-
-function parseSecondsList(s: string): number[] {
-  return s.split(",").map((part) => {
-    const t = part.trim();
-    const n = Number.parseFloat(t);
-    if (!Number.isFinite(n)) return 0;
-    return /ms$/.test(t) ? n / 1000 : n;
-  });
-}
-
-function listBackgroundMotion(): BackgroundMotionInfo {
-  const layers = animatedBgLayers();
-  if (!layers.length) return { available: false, playing: true, speed: bgMotionSpeed };
-  let anyPaused = false;
-  for (const el of layers) {
-    const ps = window.getComputedStyle(el).animationPlayState || "running";
-    if (ps.split(",").some((s) => s.trim() === "paused")) anyPaused = true;
-  }
-  return { available: true, playing: !anyPaused, speed: bgMotionSpeed };
-}
-
-function applyBackgroundMotion(op: BackgroundMotionOp): boolean {
-  const layers = animatedBgLayers();
-  if (!layers.length) return false;
-  if (typeof op.speed === "number" && Number.isFinite(op.speed)) {
-    const mult = Math.max(0.1, Math.min(10, op.speed));
-    bgMotionSpeed = mult;
-    for (const el of layers) {
-      let base = BG_MOTION_BASE.get(el);
-      if (base == null) {
-        base = window.getComputedStyle(el).animationDuration || "0s";
-        BG_MOTION_BASE.set(el, base);
-      }
-      el.style.animationDuration = parseSecondsList(base)
-        .map((sec) => `${Math.round((sec / mult) * 1000) / 1000}s`)
-        .join(", ");
-    }
-  }
-  if (typeof op.playing === "boolean") {
-    for (const el of layers) el.style.animationPlayState = op.playing ? "running" : "paused";
-  }
-  return true;
-}
+// Scene params + universal CSS-animation (background-motion) control live in
+// ./scene — listSceneParams/applySceneParamInternal/listBackgroundMotion/
+// applyBackgroundMotion.
 
 // Ensure every selected element has a durable data-ai-id (assigning a new one if
 // missing) and return them in selection order. Called when the user first chats
@@ -1529,79 +1308,8 @@ function nudgeSelected(dx: number, dy: number): void {
 // important for global background layers that are position:fixed full-bleed.
 const MOVE_KEYS: (keyof Patch)[] = ["x", "y", "w", "h"];
 
-// The persistence seam. The keyframe library is injected into the DECK (not the
-// editor-UI style) the first time any animation is applied, under
-// <style id="html-ppt-animations"> — which carries NEITHER the
-// data-html-ppt-editor marker NOR the editor-style id, so cleanHtml() KEEPS it
-// and exported decks stay self-contained. It lives in <head>, so undo (which
-// only restores slide innerHTML) never drops it. Idempotent by id, so reopening
-// a deck that already ships the block doesn't duplicate it.
-const ANIMATION_STYLE_ID = "html-ppt-animations";
-function ensureAnimationStyles(): void {
-  if (document.getElementById(ANIMATION_STYLE_ID)) return;
-  const style = document.createElement("style");
-  style.id = ANIMATION_STYLE_ID;
-  style.textContent = ANIMATION_CSS;
-  document.head.appendChild(style);
-}
-
-const ANIMATION_KEYS: (keyof Patch)[] = [
-  "animationName",
-  "animationDuration",
-  "animationDelay",
-  "animationTimingFunction",
-  "animationIterationCount",
-  "animationPlayState",
-];
-
-// Apply the animation slice of a patch. `animationName:"none"` clears every
-// animation longhand (removes motion). Otherwise we map the friendly preset to
-// its namespaced @keyframes, backfill a sensible duration/iteration when the
-// patch sets a name but omits them, and force one reflow so the animation
-// (re)plays immediately on apply — even when re-selecting the same preset.
-function applyAnimation(sel: HTMLElement, patch: Patch): void {
-  const touchesAnimation = ANIMATION_KEYS.some((k) => patch[k] !== undefined);
-  if (!touchesAnimation) return;
-
-  if (patch.animationName !== undefined && String(patch.animationName) === ANIMATION_NONE) {
-    sel.style.animationName = "";
-    sel.style.animationDuration = "";
-    sel.style.animationDelay = "";
-    sel.style.animationTimingFunction = "";
-    sel.style.animationIterationCount = "";
-    sel.style.animationFillMode = "";
-    sel.style.animationPlayState = "";
-    return;
-  }
-
-  ensureAnimationStyles();
-
-  if (patch.animationName !== undefined && ANIMATION_PRESET_SET.has(String(patch.animationName))) {
-    const preset = String(patch.animationName) as AnimationPreset;
-    const def = ANIMATION_DEFAULTS[preset];
-    // Restart cleanly so the animation visibly plays even if the name is unchanged.
-    sel.style.animationName = "none";
-    void sel.offsetWidth; // force reflow
-    sel.style.animationName = keyframeNameFor(preset);
-    sel.style.animationFillMode = "both";
-    // Backfill timing only when this patch doesn't set it and nothing is inline yet.
-    if (patch.animationDuration === undefined && !sel.style.animationDuration)
-      sel.style.animationDuration = def.duration;
-    if (patch.animationIterationCount === undefined && !sel.style.animationIterationCount)
-      sel.style.animationIterationCount = def.iterationCount;
-  }
-
-  if (patch.animationDuration !== undefined) sel.style.animationDuration = String(patch.animationDuration);
-  if (patch.animationDelay !== undefined) sel.style.animationDelay = String(patch.animationDelay);
-  if (patch.animationTimingFunction !== undefined)
-    sel.style.animationTimingFunction = String(patch.animationTimingFunction);
-  if (patch.animationIterationCount !== undefined)
-    sel.style.animationIterationCount = String(patch.animationIterationCount);
-  // Deck-agnostic: pause/resume whatever animation is already running. Applied
-  // last so it sticks regardless of any preset branch above.
-  if (patch.animationPlayState !== undefined)
-    sel.style.animationPlayState = String(patch.animationPlayState);
-}
+// Animation application (applyAnimation + the html-ppt-animations style seam)
+// lives in ./animation.
 
 // Mutate ONE element from a sanitized patch. No history/emit — the caller owns
 // the saveState() snapshot and the mutation event so multi-object edits collapse
@@ -1863,6 +1571,92 @@ function insertBlockElement(spec: { blockType: string; slots: { name: string; va
   return node;
 }
 
+// Scoped element regeneration: replace ONE element's inner HTML with AI-authored
+// markup. The string is sanitized server-side AND here, then the parsed subtree is
+// walked against the tag/attr allowlist (defense in depth) before it touches the
+// live DOM. We only ever replace innerHTML — the element itself (its tag, classes,
+// .anim/.slide membership, inline geometry) is preserved so layout can't break.
+function rebuildElementInternal(id: string, html: string): boolean {
+  const el = STATE.idLookup.get(String(id)) as HTMLElement | undefined;
+  if (!el || !document.body.contains(el)) return false;
+  // Never rebuild structural chrome or a whole slide — keep the blast radius small.
+  if (el.classList.contains("slide") || el.classList.contains("presentation")) return false;
+
+  const tpl = document.createElement("template");
+  tpl.innerHTML = sanitizeHtml(String(html ?? ""));
+  scrubSubtree(tpl.content);
+  el.replaceChildren(...Array.from(tpl.content.childNodes));
+  return true;
+}
+
+// DOM allowlist walk: drop DANGEROUS_TAGS entirely, unwrap unknown tags (keep their
+// children), strip non-allowlisted attributes + every on* handler + javascript: URLs,
+// and remove any editor markers that slipped in.
+function scrubSubtree(root: DocumentFragment | HTMLElement): void {
+  const els = Array.from((root as ParentNode).querySelectorAll("*"));
+  for (const node of els) {
+    if (!node.isConnected && !root.contains(node)) continue;
+    const tag = node.tagName.toLowerCase();
+    if (DANGEROUS_TAGS.has(tag)) {
+      node.remove();
+      continue;
+    }
+    if (!ALLOWED_TAGS.has(tag)) {
+      // Unwrap: replace the element with its children.
+      const parent = node.parentNode;
+      if (parent) {
+        while (node.firstChild) parent.insertBefore(node.firstChild, node);
+        parent.removeChild(node);
+      }
+      continue;
+    }
+    for (const attr of Array.from(node.attributes)) {
+      const name = attr.name.toLowerCase();
+      const val = attr.value;
+      const allowed = ALLOWED_ATTRS.has(name) || name.startsWith("data-") || name.startsWith("aria-");
+      if (!allowed || name.startsWith("on") || name.startsWith("data-html-ppt")) {
+        node.removeAttribute(attr.name);
+        continue;
+      }
+      if ((name === "href" || name === "src") && /^\s*(javascript|vbscript|data:text\/html)/i.test(val)) {
+        node.removeAttribute(attr.name);
+      }
+    }
+  }
+}
+
+// Manual image insertion (Toolbar → upload a file / paste a URL). Inserts a bare
+// <img> the user can move, resize, and delete like any object (media elements are
+// always selectable — isGenericEditableObject:207). Mirrors insertBlockElement.
+function insertImageElement(spec: { src: string; target?: { slideIndex?: number; x?: number; y?: number; w?: number } }): HTMLElement | null {
+  const src = String(spec.src || "").trim();
+  if (!src) return null;
+  const img = document.createElement("img");
+  img.src = src;
+  img.className = "html-ppt-created-image";
+
+  const slideList = slides();
+  const idx =
+    spec.target?.slideIndex != null
+      ? Math.min(slideList.length, Math.max(1, spec.target.slideIndex)) - 1
+      : STATE.currentSlideIndex;
+  const slide = slideList[idx] || currentSlide();
+  const w = spec.target?.w ?? 360;
+  img.style.width = px(w);
+  img.style.height = "auto";
+  img.style.display = "block";
+  slide.appendChild(img);
+
+  const rect = slide.getBoundingClientRect();
+  const x = spec.target?.x != null ? spec.target.x : Math.round((rect.width - w) / 2);
+  const y = spec.target?.y != null ? spec.target.y : Math.round(rect.height * 0.32);
+  img.style.position = "absolute";
+  img.style.left = px(x);
+  img.style.top = px(y);
+  img.setAttribute("data-html-ppt-positioned", "true");
+  return img;
+}
+
 // ---------------------------------------------------------------------------
 // Public API (dispatched to by rpc.ts) — mirrors window.__htmlPptEditorV10
 // ---------------------------------------------------------------------------
@@ -1920,6 +1714,15 @@ export const editorApi = {
     updateOverlay();
     if (node) emitMutation();
   },
+  // Manual image insert (Toolbar). One undo snapshot; selects the new <img>.
+  insertImage(spec: { src: string; target?: { slideIndex?: number; x?: number; y?: number; w?: number } }): void {
+    if (!STATE.enabled) return;
+    saveState();
+    const node = insertImageElement(spec);
+    if (node) setSelection([node]);
+    updateOverlay();
+    if (node) emitMutation();
+  },
   // The unified envelope entry: a whole AI batch under ONE undo snapshot.
   applyActions(actions: EditorAction[] | null | undefined): void {
     if (!STATE.enabled || !Array.isArray(actions) || !actions.length) return;
@@ -1949,6 +1752,20 @@ export const editorApi = {
     updateOverlay();
     if (mutated) emitMutation();
   },
+  // Scoped element regeneration (the "rebuild from scratch" AI edit). Replaces the
+  // target element's inner HTML with sanitized AI markup under one undo snapshot.
+  rebuildElement(id: string, html: string): void {
+    if (!STATE.enabled) return;
+    const el = STATE.idLookup.get(String(id)) as HTMLElement | undefined;
+    if (!el || !document.body.contains(el)) return;
+    saveState();
+    const changed = rebuildElementInternal(id, html);
+    if (changed) {
+      setSelection([el]);
+      updateOverlay();
+      emitMutation();
+    }
+  },
   deselect(): void {
     deselect();
   },
@@ -1967,6 +1784,16 @@ export const editorApi = {
   applySceneParam(op: SceneParamOp): void {
     if (!STATE.enabled) return;
     if (applySceneParamInternal(op)) emitMutation();
+  },
+  // Per-section 3D scenes (optional deck contract): list available scenes + the
+  // current section→scene mapping, and assign one (the deck crossfades + persists).
+  // Like scene params, these live in deck JS — not on the innerHTML undo stack.
+  listSceneSections(): SceneSectionInfo {
+    return listSceneSections();
+  },
+  applySceneAssignment(op: SceneAssignOp): void {
+    if (!STATE.enabled) return;
+    if (applySceneAssignment(op)) emitMutation();
   },
   // Universal CSS-animation control (no deck contract): speed/pause the deck's
   // animated background layers. Inline styles persist via getCleanHtml.

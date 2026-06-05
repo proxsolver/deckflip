@@ -5,12 +5,19 @@
 //   iframe -> parent : Response (for commands that return a value)
 //   iframe -> parent : EditorEvent (fire-and-forget: selection/mutation/slide)
 
-import type { Patch, PatchOp } from "@shared/patch-keys";
-import type { EditorAction, LayoutOp, BlockSpec, SceneParamOp } from "@shared/actions";
-import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp } from "@shared/scene-params";
+import type { Patch, PatchOp } from "@shared/editing";
+import type { EditorAction, LayoutOp, BlockSpec, SceneParamOp } from "@shared/editing";
+import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp, SceneSectionInfo, SceneAssignOp } from "@shared/editing";
 import type { SelectionPayload, SelectedContext, SlideInfo, BackgroundLayer } from "./context";
 
 export type EditorTool = "select" | "text" | "rect";
+
+// Manual image insertion (Toolbar → upload/URL). The src is an inlined data URL
+// (uploads) or an external URL (paste). Editor-side only — not an AI action.
+export interface ImageSpec {
+  src: string;
+  target?: { slideIndex?: number; x?: number; y?: number; w?: number };
+}
 
 export type EditorMethod =
   | "setEditMode"
@@ -19,7 +26,9 @@ export type EditorMethod =
   | "applyPatches"
   | "applyLayout"
   | "insertBlock"
+  | "insertImage"
   | "applyActions"
+  | "rebuildElement"
   | "duplicateSelected"
   | "deleteSelected"
   | "deselect"
@@ -27,6 +36,8 @@ export type EditorMethod =
   | "listBackgroundLayers"
   | "listSceneParams"
   | "applySceneParam"
+  | "listSceneSections"
+  | "applySceneAssignment"
   | "listBackgroundMotion"
   | "applyBackgroundMotion"
   | "assignStableIds"
@@ -84,7 +95,9 @@ export interface EditorCalls {
   applyPatches(ops: PatchOp[]): Promise<void>;
   applyLayout(spec: Omit<LayoutOp, "ids"> & { ids?: string[] }): Promise<void>;
   insertBlock(spec: BlockSpec): Promise<void>;
+  insertImage(spec: ImageSpec): Promise<void>;
   applyActions(actions: EditorAction[]): Promise<void>;
+  rebuildElement(id: string, html: string): Promise<void>;
   duplicateSelected(): Promise<void>;
   deleteSelected(): Promise<void>;
   deselect(): Promise<void>;
@@ -92,6 +105,8 @@ export interface EditorCalls {
   listBackgroundLayers(): Promise<BackgroundLayer[]>;
   listSceneParams(): Promise<SceneParamInfo[]>;
   applySceneParam(op: SceneParamOp): Promise<void>;
+  listSceneSections(): Promise<SceneSectionInfo>;
+  applySceneAssignment(op: SceneAssignOp): Promise<void>;
   listBackgroundMotion(): Promise<BackgroundMotionInfo>;
   applyBackgroundMotion(op: BackgroundMotionOp): Promise<void>;
   assignStableIds(): Promise<string[]>;
