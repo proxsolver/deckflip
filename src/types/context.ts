@@ -65,6 +65,17 @@ export interface SelectedContext extends SelectionPayload {
   computedStyle: Record<string, string>;
 }
 
+export interface ColorSuggestion {
+  hex: string;
+  label: string;
+}
+
+export interface SlidePalette {
+  dominant: ColorSuggestion[];
+  suggestions: ColorSuggestion[];
+  rawColors: string[];
+}
+
 export interface SlideInfo {
   current: number;
   total: number;

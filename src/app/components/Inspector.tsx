@@ -8,7 +8,9 @@ import { useEffect, useRef, useState } from "react";
 import type { Patch } from "@shared/editing";
 import { ANIMATION_NONE, ANIMATION_PRESETS, ANIMATION_DEFAULTS } from "@shared/editing";
 import type { AnimationPreset } from "@shared/editing";
-import type { SelectionPayload } from "@/types/context";
+import type { SelectionPayload, SlidePalette } from "@/types/context";
+import type { EditorBridge } from "../hooks/useEditorBridge";
+import { SmartColorPicker } from "./SmartColorPicker";
 
 type ColorKey = "color" | "backgroundColor" | "borderColor";
 
@@ -16,17 +18,18 @@ interface InspectorProps {
   selection: SelectionPayload;
   onPatch: (patch: Patch) => void;
   onClose: () => void;
+  bridge: EditorBridge;
 }
 
-const toHex = (v: string) => (/^#[0-9a-fA-F]{6}$/.test(v) ? v : "#ffffff");
-
-export function Inspector({ selection, onPatch, onClose }: InspectorProps) {
+export function Inspector({ selection, onPatch, onClose, bridge }: InspectorProps) {
   // Whether this object holds editable text. Captured per-selection (sticky),
   // NOT read live: emptying the field flips the payload's textSafe to false,
   // and if we keyed the textarea off that it would unmount mid-edit, drop focus
   // to <body>, and let the next Backspace/Delete fall through to "delete the
   // element". Recomputed only when a different object is selected.
   const [canEditText, setCanEditText] = useState(!!selection.textSafe);
+
+  const [palette, setPalette] = useState<SlidePalette | null>(null);
 
   const [x, setX] = useState(0);
   const [y, setY] = useState(0);
@@ -76,6 +79,15 @@ export function Inspector({ selection, onPatch, onClose }: InspectorProps) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection.id]);
+
+  // Fetch slide color palette when navigating to a different slide.
+  useEffect(() => {
+    let cancelled = false;
+    bridge.getSlidePalette()
+      .then((p: SlidePalette) => { if (!cancelled) setPalette(p); })
+      .catch(() => { if (!cancelled) setPalette(null); });
+    return () => { cancelled = true; };
+  }, [selection.slideIndex, bridge]);
 
   function flush() {
     if (debounce.current) clearTimeout(debounce.current);
@@ -156,21 +168,12 @@ export function Inspector({ selection, onPatch, onClose }: InspectorProps) {
   );
 
   const colorCtl = (label: string, key: ColorKey, value: string, set: (s: string) => void) => (
-    <div className="ip-color">
-      <span>{label}</span>
-      <input
-        type="color"
-        value={toHex(value)}
-        onChange={(e) => setColorField(key, e.target.value.toUpperCase(), set)}
-        title={`${label} color`}
-      />
-      <input
-        type="text"
-        value={value}
-        placeholder="—"
-        onChange={(e) => setColorField(key, e.target.value, set)}
-      />
-    </div>
+    <SmartColorPicker
+      label={label}
+      value={value}
+      onChange={(hex) => setColorField(key, hex, set)}
+      palette={palette}
+    />
   );
 
   const cls = String(selection.className ?? "").split(" ").filter(Boolean)[0];

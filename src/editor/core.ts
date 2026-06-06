@@ -42,6 +42,8 @@ import {
   listSceneSections,
   applySceneAssignment,
 } from "./scene";
+import type { SlidePalette } from "@/types/context";
+import { extractSlideColors } from "./color-extract";
 
 // Durable per-element marker for anchoring AI chat threads. Deliberately NOT a
 // `data-html-ppt-*` name so getCleanHtml keeps it — it survives undo (it's in the
@@ -1902,6 +1904,9 @@ export const editorApi = {
   },
   getSelectedImageData(): string | null {
     return getSelectedImageData();
+  },
+  getSlidePalette(): SlidePalette {
+    return extractSlideColors(currentSlide());
   },
   assignStableIds(): string[] {
     return assignStableIds();

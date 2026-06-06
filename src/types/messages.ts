@@ -8,7 +8,7 @@
 import type { Patch, PatchOp } from "@shared/editing";
 import type { EditorAction, LayoutOp, BlockSpec, SceneParamOp } from "@shared/editing";
 import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp, SceneSectionInfo, SceneAssignOp } from "@shared/editing";
-import type { SelectionPayload, SelectedContext, SlideInfo, BackgroundLayer } from "./context";
+import type { SelectionPayload, SelectedContext, SlideInfo, BackgroundLayer, SlidePalette } from "./context";
 
 export type EditorTool = "select" | "text" | "rect";
 
@@ -56,7 +56,8 @@ export type EditorMethod =
   | "getSelectedContext"
   | "getSelectionContexts"
   | "getSelectedImageData"
-  | "getSelectedPayload";
+  | "getSelectedPayload"
+  | "getSlidePalette";
 
 export interface Command {
   kind: "cmd";
@@ -126,4 +127,5 @@ export interface EditorCalls {
   getSelectionContexts(): Promise<SelectedContext[]>;
   getSelectedImageData(): Promise<string | null>;
   getSelectedPayload(): Promise<SelectionPayload>;
+  getSlidePalette(): Promise<SlidePalette>;
 }

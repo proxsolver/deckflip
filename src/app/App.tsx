@@ -697,7 +697,7 @@ export function App() {
           </div>
         )}
         {editMode && selection.id && (
-          <Inspector selection={selection} onPatch={applyPatch} onClose={() => bridge.deselect()} />
+          <Inspector selection={selection} onPatch={applyPatch} onClose={() => bridge.deselect()} bridge={bridge} />
         )}
       </div>
 

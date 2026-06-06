@@ -11,7 +11,7 @@ import type {
   HistoryState,
   InboundMessage,
 } from "@/types/messages";
-import type { SelectionPayload, SlideInfo } from "@/types/context";
+import type { SelectionPayload, SlideInfo, SlidePalette } from "@/types/context";
 
 export interface BridgeHandlers {
   onReady?: () => void;
@@ -140,6 +140,7 @@ export function useEditorBridge(
       getSelectionContexts: () => call("getSelectionContexts") as Promise<never>,
       getSelectedImageData: () => call("getSelectedImageData") as Promise<string | null>,
       getSelectedPayload: () => call("getSelectedPayload") as Promise<never>,
+      getSlidePalette: () => call("getSlidePalette") as Promise<SlidePalette>,
     };
   }, [iframeRef]);
 }
