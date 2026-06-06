@@ -207,6 +207,32 @@ export function deckLint(files: DeckFiles): { issues: string[] } {
     if (!/Chart\.register\s*\(\s*ChartDataLabels/.test(js)) issues.push("Chart.register(ChartDataLabels) 호출 누락");
   }
 
+  // Canvas ↔ __chartInit parity (excludes the 3D canvas): a chart canvas with no
+  // registration renders blank — the exact kind of breakage manual review catches.
+  const canvasIds = Array.from(html.matchAll(/<canvas[^>]*\bid=["']([^"']+)["']/gi))
+    .map((mm) => mm[1])
+    .filter((id) => id !== "three-canvas");
+  for (const id of canvasIds) {
+    const esc = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (!new RegExp(`__chartInit\\s*[\\[.]\\s*["']?${esc}["']?`).test(js)) {
+      issues.push(`차트 캔버스 #${id} 에 대응하는 window.__chartInit 등록이 없음(빈 차트로 렌더됨)`);
+    }
+  }
+
+  // Too few slides → the generation was almost certainly truncated/broken (a real
+  // editorial deck has many sections). High precision: never fires on a healthy deck.
+  const slideCount = (html.match(/<section[^>]*\bslide\b/gi) || []).length;
+  if (slideCount > 0 && slideCount < 4) issues.push(`슬라이드가 ${slideCount}장뿐 — 생성이 잘렸거나 깨졌을 수 있음`);
+
+  // High-signal banned filler words (a precise subset of the §카피 규칙). These
+  // almost never appear except as AI boilerplate, so flagging them is safe.
+  for (const w of ["시사점", "패러다임", "재정의", "진정성"]) {
+    if (html.includes(w)) {
+      issues.push(`금지어(카피 규칙) 사용: "${w}" — 쉬운 말로 바꿔라`);
+      break;
+    }
+  }
+
   // Print / headless contract.
   if (!/@media\s+print/.test(css)) issues.push("@media print 블록 없음");
   if (!/@page/.test(css)) issues.push("@page 사이즈 규칙 없음");

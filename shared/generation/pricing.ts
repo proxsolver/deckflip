@@ -19,7 +19,13 @@ export interface ModelRate {
 // Keyed by model id. Matching is tolerant (lowercased, longest-prefix), so
 // "claude-opus-4-8[1m]" or "gpt-5.5-2025-xx" still resolve to the base rate.
 export const MODEL_PRICING: Record<string, ModelRate> = {
-  "claude-opus-4-8": { input: 15, output: 75, cachedInput: 1.5 },
+  // Opus 4.5–4.8 are $5/$25 per 1M (cache read ~0.1x = $0.50). Longest-prefix
+  // match means these win over the generic "claude-opus-4" base below.
+  "claude-opus-4-8": { input: 5, output: 25, cachedInput: 0.5 },
+  "claude-opus-4-7": { input: 5, output: 25, cachedInput: 0.5 },
+  "claude-opus-4-6": { input: 5, output: 25, cachedInput: 0.5 },
+  "claude-opus-4-5": { input: 5, output: 25, cachedInput: 0.5 },
+  // Opus 4.0 / 4.1 were the older $15/$75 tier; keep them on the base entry.
   "claude-opus-4": { input: 15, output: 75, cachedInput: 1.5 },
   "claude-sonnet-4": { input: 3, output: 15, cachedInput: 0.3 },
   "claude-haiku-4": { input: 1, output: 5, cachedInput: 0.1 },

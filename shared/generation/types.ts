@@ -56,6 +56,22 @@ export interface DesignBrief {
   toneNotes: string;
 }
 
+// Prompt-export mode (HTML_PPT_AI_MOCK=1): instead of calling the API, the server
+// returns the EXACT generation prompt for the user to paste into a Claude Code
+// session, which writes the deck into generated/<deckId>/ itself (subscription =
+// no per-token API billing, same Opus 4.8). The "Load it" button then pulls the
+// finished deck back via /api/load-generated. See docs/ai-initial-generation-pipeline.md.
+export interface PromptExport {
+  kind: "generation";
+  deckId: string;
+  /** The copyable prompt to paste into Claude Code. */
+  prompt: string;
+  /** The pipeline doc Claude Code must follow (repo-relative). */
+  docPath: string;
+  /** Where Claude Code writes the deck (repo-relative), e.g. generated/<deckId>. */
+  dir: string;
+}
+
 // What the server returns to the client.
 export interface GeneratedDeck {
   deckId: string;
@@ -66,6 +82,9 @@ export interface GeneratedDeck {
   mock: boolean;
   /** Token usage + estimated cost across all generation passes (absent on mock/old). */
   usage?: GenUsage;
+  /** Set in prompt-export mode — the deck wasn't generated; this is the prompt to
+   *  run in Claude Code. When present, `files`/`brief` are placeholders. */
+  promptExport?: PromptExport;
 }
 
 // ---------------------------------------------------------------------------

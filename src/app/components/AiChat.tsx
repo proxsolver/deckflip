@@ -5,6 +5,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { SparkleIcon, SendIcon, ImageIcon } from "./icons";
+import type { EditExport } from "../ai/client";
 
 // Small inline cube glyph for the "3D scene" mode toggle (no shared icon yet).
 function CubeIcon() {
@@ -30,6 +31,8 @@ export interface ChatMsg {
   role: "user" | "ai" | "error";
   text: string;
   keys?: string[];
+  /** Prompt-export mode: a Claude Code edit instruction rendered as a copyable block. */
+  editExport?: EditExport;
 }
 
 interface AiChatProps {
@@ -38,7 +41,9 @@ interface AiChatProps {
   runAi: (
     prompt: string,
     opts?: { image?: boolean; sceneRegen?: boolean; elementRegen?: boolean }
-  ) => Promise<{ message: string; keys: string[]; mock: boolean }>;
+  ) => Promise<{ message: string; keys: string[]; mock: boolean; editExport?: EditExport }>;
+  /** Prompt-export mode: re-pull the deck after a Claude Code session edited it on disk. */
+  onReloadDeck?: () => void | Promise<void>;
   /** Identifies the current object/selection; its own thread is shown. "" = nothing selected. */
   threadKey: string;
   /** Messages for the current threadKey (owned by the parent, so they persist across switches). */
@@ -103,7 +108,33 @@ const SCENE_INTENT_RE =
 const REBUILD_INTENT_RE =
   /\b(rebuild|re-?design|restructure|re-?make|overhaul|revamp|from scratch)\b|재설계|재구성|처음부터|새로 ?만들|싹 ?바꿔/i;
 
-export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend, onResolveThreadKey }: AiChatProps) {
+// Prompt-export mode: render the Claude Code edit instruction as a copyable JSON
+// block + a "Reload deck" action to re-pull after Claude Code edits the deck on disk.
+function EditExportBlock({ editExport, onReloadDeck }: { editExport: EditExport; onReloadDeck?: () => void | Promise<void> }) {
+  const [copied, setCopied] = useState(false);
+  const json = JSON.stringify(editExport, null, 2);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(json);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard blocked — the user can select the text manually */
+    }
+  };
+  return (
+    <div className="ai-export">
+      <div className="ai-export-hint">Paste this into a Claude Code session, then reload:</div>
+      <pre className="ai-export-json">{json}</pre>
+      <div className="ai-export-actions">
+        <button className="ai-chip" onClick={copy}>{copied ? "Copied ✓" : "Copy JSON"}</button>
+        {onReloadDeck && <button className="ai-chip" onClick={() => void onReloadDeck()}>Reload deck</button>}
+      </div>
+    </div>
+  );
+}
+
+export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend, onResolveThreadKey, onReloadDeck }: AiChatProps) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [demo, setDemo] = useState(false);
@@ -133,9 +164,9 @@ export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend
     setInput("");
     setBusy(true);
     try {
-      const { message, keys, mock } = await runAi(prompt, { image, sceneRegen, elementRegen });
+      const { message, keys, mock, editExport } = await runAi(prompt, { image, sceneRegen, elementRegen });
       setDemo(mock);
-      onAppend(key, { role: "ai", text: message, keys });
+      onAppend(key, { role: "ai", text: message, keys, editExport });
       // Once a 3D background has been regenerated, STAY in 3D mode: follow-ups
       // ("make it fit a car brand", "이 스타일보다 다시") are almost always more
       // regeneration, not object edits — so don't fall back to sceneParam tuning.
@@ -203,6 +234,7 @@ export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend
             <div className="ai-bubble">
               {m.text}
               {m.keys && m.keys.length > 0 && <div className="ai-keys">{m.keys.join(" · ")}</div>}
+              {m.editExport && <EditExportBlock editExport={m.editExport} onReloadDeck={onReloadDeck} />}
             </div>
           </div>
         ))}

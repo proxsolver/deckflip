@@ -92,6 +92,112 @@ export function coerceDeckFiles(raw: unknown): DeckFiles | null {
   };
 }
 
+// ---- delimited single-pass output -----------------------------------------
+// The single-pass model emits the deck as delimited free-text files instead of one
+// structured-output JSON object. The win: a TRUNCATED response stays usable — every
+// file that completed is kept, and a partial index.html (written last, slides in
+// order) just yields a shorter but still-renderable deck. This is what makes the
+// single coherent-author path safe to retry/continue instead of losing everything.
+
+// Strip a surrounding ```lang … ``` fence (or a dangling opening/closing one).
+function stripFences(s: string): string {
+  let t = s.trim();
+  const full = /^```[\w-]*[ \t]*\r?\n([\s\S]*?)\r?\n```$/.exec(t);
+  if (full) return full[1];
+  t = t.replace(/^```[\w-]*[ \t]*\r?\n/, "");
+  t = t.replace(/\r?\n```\s*$/, "");
+  return t;
+}
+
+// Best-effort close of tags a truncation left open so a partial deck still renders.
+function repairTruncatedHtml(html: string): string {
+  let h = html.trimEnd();
+  const open = (h.match(/<section\b/gi) || []).length;
+  const close = (h.match(/<\/section>/gi) || []).length;
+  for (let i = close; i < open; i++) h += "\n</section>";
+  if (/<main\b/i.test(h) && !/<\/main>/i.test(h)) h += "\n</main>";
+  if (/<body\b/i.test(h) && !/<\/body>/i.test(h)) h += "\n</body>";
+  if (/<html\b/i.test(h) && !/<\/html>/i.test(h)) h += "\n</html>";
+  return h;
+}
+
+// Salvage a raw HTML document when the model skipped the markers entirely.
+function extractLooseHtml(text: string): string {
+  const i = text.search(/<!DOCTYPE html|<html[\s>]/i);
+  if (i === -1) return "";
+  const h = stripFences(text.slice(i));
+  return /<section[^>]*\bslide\b/i.test(h) ? repairTruncatedHtml(h) : "";
+}
+
+export interface ParsedDelimitedDeck {
+  files: DeckFiles | null;
+  brief: unknown;
+  message: string;
+  /** true once the END sentinel was seen — i.e. the output wasn't truncated. */
+  complete: boolean;
+}
+
+// Parse the delimited single-pass output into DeckFiles + brief. Tolerant by design:
+// keeps whatever completed, repairs a truncated trailing index.html, returns
+// files:null only when there is no usable index.html yet (→ caller continues or falls back).
+export function parseDelimitedDeck(raw: string): ParsedDelimitedDeck {
+  const text = typeof raw === "string" ? raw : "";
+  const complete = /^[ \t]*={2,}[ \t]*END[ \t]*={2,}[ \t]*$/im.test(text);
+
+  const markerRe = /^[ \t]*={2,}[ \t]*(FILE:[ \t]*[\w.\-]+|BRIEF|MESSAGE|END)[ \t]*={2,}[ \t]*$/gim;
+  const marks: { name: string; bodyStart: number; markStart: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = markerRe.exec(text)) !== null) {
+    marks.push({ name: m[1].trim(), bodyStart: markerRe.lastIndex, markStart: m.index });
+  }
+  if (!marks.length) {
+    const html = extractLooseHtml(text);
+    return { files: html ? { indexHtml: html, styleCss: "", scriptJs: "" } : null, brief: {}, message: "", complete };
+  }
+
+  const bodyOf = (i: number): string => {
+    const end = i + 1 < marks.length ? marks[i + 1].markStart : text.length;
+    return text.slice(marks[i].bodyStart, end).replace(/^\r?\n/, "");
+  };
+
+  let indexHtml = "";
+  let styleCss = "";
+  let scriptJs = "";
+  let threeSceneJs = "";
+  let message = "";
+  let brief: unknown = {};
+  for (let i = 0; i < marks.length; i++) {
+    const name = marks[i].name.toUpperCase();
+    const body = bodyOf(i);
+    if (name.startsWith("FILE:")) {
+      const file = name.slice(5).trim().toLowerCase();
+      if (file === "index.html") indexHtml = stripFences(body);
+      else if (file === "style.css") styleCss = stripFences(body);
+      else if (file === "script.js") scriptJs = stripFences(body);
+      else if (file === "three_scene.js") threeSceneJs = stripFences(body);
+    } else if (name === "BRIEF") {
+      try {
+        brief = JSON.parse(stripFences(body));
+      } catch {
+        brief = {};
+      }
+    } else if (name === "MESSAGE") {
+      message = body.trim();
+    }
+  }
+
+  if (!indexHtml || !/<section[^>]*\bslide\b/i.test(indexHtml)) {
+    return { files: null, brief, message, complete };
+  }
+  indexHtml = repairTruncatedHtml(indexHtml);
+  return {
+    files: { indexHtml, styleCss, scriptJs, threeSceneJs: threeSceneJs || undefined },
+    brief,
+    message,
+    complete,
+  };
+}
+
 // ---- multi-pass tool names ------------------------------------------------
 
 export const EMIT_PLAN_TOOL = "emit_plan";

@@ -18,6 +18,19 @@ import {
   type ParseUploadResponse,
 } from "@shared/generation";
 
+// Placeholder brief for prompt-export mode (the real one lands in _brief.json when
+// Claude Code writes the deck; loadGeneratedDeck reads it back).
+const EMPTY_BRIEF: DesignBrief = {
+  topic: "",
+  presetUsed: "",
+  paletteHex: [],
+  fonts: [],
+  sections: [],
+  threeDMotif: "",
+  language: "",
+  toneNotes: "",
+};
+
 export async function requestGeneration(req: GenerationRequest): Promise<GeneratedDeck> {
   const resp = await fetch("/api/generate", {
     method: "POST",
@@ -28,6 +41,20 @@ export async function requestGeneration(req: GenerationRequest): Promise<Generat
   const data = (await resp.json().catch(() => ({}))) as Partial<GeneratedDeck> & { error?: string };
   if (!resp.ok || data.error) {
     throw new Error(data.error || `Generation failed (${resp.status}).`);
+  }
+
+  // Prompt-export mode (HTML_PPT_AI_MOCK=1): the server didn't generate a deck — it
+  // returned the prompt to run in Claude Code. No files/brief to validate; the wizard
+  // shows the prompt panel and loads the deck later via loadGeneratedDeck().
+  if (data.promptExport?.deckId) {
+    return {
+      deckId: data.promptExport.deckId,
+      files: { indexHtml: "", styleCss: "", scriptJs: "" },
+      brief: data.brief ?? EMPTY_BRIEF,
+      message: data.message || "Prompt-export mode.",
+      mock: true,
+      promptExport: data.promptExport,
+    };
   }
 
   const files = coerceDeckFiles(data.files);
@@ -44,6 +71,31 @@ export async function requestGeneration(req: GenerationRequest): Promise<Generat
     message: data.message || "Deck generated.",
     mock: !!data.mock,
     usage: data.usage,
+  };
+}
+
+// Load a deck that a Claude Code session wrote (or modified) on disk under
+// generated/<deckId>/. Powers the prompt-export "Load it" / "Reload deck" buttons.
+export async function loadGeneratedDeck(deckId: string): Promise<GeneratedDeck> {
+  const resp = await fetch("/api/load-generated", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ deckId }),
+  });
+  const data = (await resp.json().catch(() => ({}))) as Partial<GeneratedDeck> & { error?: string };
+  if (!resp.ok || data.error) throw new Error(data.error || `Load failed (${resp.status}).`);
+  const files = coerceDeckFiles(data.files);
+  if (!files || !data.deckId || !data.brief) {
+    throw new Error("The deck folder is missing files — has Claude Code finished writing it?");
+  }
+  const rawAssets = (data.files as { assets?: DeckAsset[] } | undefined)?.assets;
+  if (Array.isArray(rawAssets) && rawAssets.length) files.assets = rawAssets;
+  return {
+    deckId: data.deckId,
+    files,
+    brief: data.brief,
+    message: data.message || "Loaded the deck.",
+    mock: true,
   };
 }
 

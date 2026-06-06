@@ -17,8 +17,8 @@ import { NewDeckWizard } from "./components/NewDeckWizard";
 import { SparkleIcon } from "./components/icons";
 import { useEditorBridge } from "./hooks/useEditorBridge";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
-import { requestAiActions, requestAiImages, requestElementRegen } from "./ai/client";
-import { requestSceneRegen, appendDeckPrompt } from "./ai/generate-client";
+import { requestAiActions, requestAiImages, requestElementRegen, type EditExport } from "./ai/client";
+import { requestSceneRegen, appendDeckPrompt, loadGeneratedDeck } from "./ai/generate-client";
 import { installGlobalErrorCapture, logger } from "./lib/logger";
 import type { DesignBrief, DeckFiles, GeneratedDeck } from "@shared/generation";
 import { formatUsage } from "@shared/generation";
@@ -297,6 +297,22 @@ export function App() {
     if (aiFilesRef.current) downloadDeckFiles(aiFilesRef.current);
   }, []);
 
+  // Prompt-export mode: re-pull the current deck from generated/<deckId>/ after a
+  // Claude Code session edited it on disk (the chat's "Reload deck" action).
+  const onReloadDeck = useCallback(async () => {
+    const id = lastDeckIdRef.current;
+    if (!id) {
+      setStatus("No deck to reload — generate or load an AI deck first.");
+      return;
+    }
+    try {
+      onGenerated(await loadGeneratedDeck(id));
+      setStatus("Reloaded the deck from disk.");
+    } catch (err) {
+      setStatus(`Reload failed: ${String((err as Error)?.message ?? err)}`);
+    }
+  }, [onGenerated]);
+
   // On launch, recall the user's last working deck (the future per-user backend;
   // localStorage for now) so they land in their deck, not an empty canvas.
   useEffect(() => {
@@ -444,7 +460,7 @@ export function App() {
     async (
       prompt: string,
       opts?: { image?: boolean; sceneRegen?: boolean; elementRegen?: boolean }
-    ): Promise<{ message: string; keys: string[]; mock: boolean }> => {
+    ): Promise<{ message: string; keys: string[]; mock: boolean; editExport?: EditExport }> => {
       // "Totally different 3D animation" intent → regenerate three_scene.js as new
       // code. Global (no selection needed) — handled before the selection check.
       if (opts?.sceneRegen) {
@@ -480,7 +496,18 @@ export function App() {
         return { message, keys: Array.from(new Set(ops.flatMap((o) => Object.keys(o.patch)))), mock };
       }
 
-      const { actions, message, mock } = await requestAiActions(prompt, ctxs, briefRef.current ?? undefined);
+      const { actions, message, mock, editExport } = await requestAiActions(
+        prompt,
+        ctxs,
+        briefRef.current ?? undefined,
+        lastDeckIdRef.current || undefined
+      );
+      // Prompt-export mode: nothing to apply — hand the JSON instruction to the chat
+      // so the user can run it in Claude Code, then "Reload deck".
+      if (editExport) {
+        setStatus("Prompt-export mode — copy the JSON into a Claude Code session.");
+        return { message, keys: [], mock, editExport };
+      }
       bridge.applyActions(actions);
       setStatus(`${mock ? "Demo" : "AI"}: ${message}`);
       // Summarize the heterogeneous batch for the chat: patch keys + verb/block labels.
@@ -722,6 +749,7 @@ export function App() {
           messages={threads[selectionKey(selection)] ?? []}
           onAppend={appendMessage}
           onResolveThreadKey={resolveThreadKey}
+          onReloadDeck={onReloadDeck}
         />
       )}
 

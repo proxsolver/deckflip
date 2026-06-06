@@ -227,6 +227,22 @@ body {
 .ai-msg.ai .ai-bubble { background: var(--bg-input); color: var(--text); border-bottom-left-radius: 5px; }
 .ai-msg.error .ai-bubble { background: rgba(239, 68, 68, 0.12); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.35); }
 .ai-keys { margin-top: 6px; font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--text-dim); }
+/* Prompt-export mode: copyable Claude Code edit instruction inside a chat bubble. */
+.ai-export { margin-top: 8px; }
+.ai-export-hint { font-size: 11.5px; color: var(--text-dim); margin-bottom: 6px; }
+.ai-export-json {
+  max-height: 220px; overflow: auto; margin: 0; padding: 8px 10px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px;
+  font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.45; color: var(--text);
+  white-space: pre; word-break: normal;
+}
+.ai-export-actions { display: flex; gap: 6px; margin-top: 6px; }
+/* Prompt-export mode: the wizard's "run this in Claude Code" panel. */
+.wizard-export { gap: 12px; }
+.wizard-export-prompt {
+  width: 100%; max-height: 320px; overflow: auto; resize: vertical;
+  font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.5; white-space: pre;
+}
 .ai-typing { display: inline-flex; gap: 4px; align-items: center; }
 .ai-typing span { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); animation: ai-blink 1.2s infinite ease-in-out; }
 .ai-typing span:nth-child(2) { animation-delay: 0.2s; }

@@ -6,6 +6,7 @@ import { handleAiEdit } from "./api/_editing/handler";
 import { handleAiEditElement } from "./api/_editing/element";
 import { handleAiImage, handleAiImageSearch } from "./api/_editing/image";
 import { handleGenerate } from "./api/_generation/generate";
+import { handleLoadGenerated } from "./api/_generation/load";
 import { handleRegenerateScene } from "./api/_generation/scene";
 import { handleParseUpload } from "./api/_generation/parse";
 import { handleGenerateCandidates } from "./api/_generation/candidates";
@@ -53,6 +54,7 @@ function aiDevApi(): Plugin {
       // the local-dir backend (api/storage.ts). Editing api/_generate.ts needs a
       // dev-server restart (the handler is imported at startup, like the others).
       jsonPost(server, "/api/generate", (p) => handleGenerate(p as Parameters<typeof handleGenerate>[0]));
+      jsonPost(server, "/api/load-generated", (p) => handleLoadGenerated(p as Parameters<typeof handleLoadGenerated>[0]));
       jsonPost(server, "/api/regenerate-scene", (p) => handleRegenerateScene(p as Parameters<typeof handleRegenerateScene>[0]));
       jsonPost(server, "/api/parse-upload", (p) => handleParseUpload(p as Parameters<typeof handleParseUpload>[0]));
       jsonPost(server, "/api/generate-candidates", (p) => handleGenerateCandidates(p as Parameters<typeof handleGenerateCandidates>[0]));

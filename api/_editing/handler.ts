@@ -31,6 +31,26 @@ export interface AiEditRequest {
   /** Optional design brief from the generation step — the deck's original intent,
    *  threaded in as memory so edits stay consistent with how the deck was built. */
   deckBrief?: Record<string, unknown>;
+  /** The current deck's id — used in prompt-export mode to point Claude Code at
+   *  generated/<deckId>/. Absent for disk-opened decks. */
+  deckId?: string;
+}
+
+// Prompt-export mode (HTML_PPT_AI_MOCK=1): instead of returning safe actions, the
+// edit endpoint hands back a JSON instruction for the user to paste into a Claude
+// Code session, which edits generated/<deckId>/ directly. See docs/ai-initial-
+// generation-pipeline.md §4.
+export interface EditExport {
+  /** outerHTML of the primary selected element (how Claude Code locates it). */
+  object: string;
+  /** The user's edit request, verbatim. */
+  user_prompt: string;
+  /** The deck folder id, or "" when unknown. */
+  deckId: string;
+  /** Files Claude Code should read for context (repo-relative). */
+  contextFiles: string[];
+  /** What Claude Code should do. */
+  instruction: string;
 }
 
 // The unified action envelope returned by the text endpoint (patch | layout |
@@ -40,6 +60,8 @@ export interface AiActionResponse {
   actions: EditorAction[];
   message: string;
   mock: boolean;
+  /** Set in prompt-export mode — a Claude Code edit instruction instead of actions. */
+  editExport?: EditExport;
 }
 
 const PATCH_KEYS_FOR_PROMPT = [...PATCH_KEYS];
@@ -57,11 +79,13 @@ export async function handleAiEdit(req: AiEditRequest): Promise<AiActionResponse
   if (!contexts.length) throw new Error("No selected object context was provided.");
   const ids = contexts.map((c) => c.id as string);
 
-  // Demo mode: no key, or explicitly forced via HTML_PPT_AI_MOCK (so you can demo
-  // the full flow even when a real key is configured).
   const apiKey = env("OPENAI_API_KEY");
   const forceMock = /^(1|true|yes|on)$/i.test(env("HTML_PPT_AI_MOCK") || "");
-  if (!apiKey || forceMock) return mockActions(prompt, contexts);
+  // Prompt-export mode: hand back a JSON edit instruction for a Claude Code session
+  // (the user's subscription edits the deck on disk) instead of calling the API.
+  if (forceMock) return editExportResponse(prompt, contexts, req.deckId);
+  // No-key demo mode: deterministic mock actions so the flow works secret-free.
+  if (!apiKey) return mockActions(prompt, contexts);
 
   const model = env("HTML_PPT_AI_MODEL") || env("OPENAI_MODEL") || "gpt-4.1-mini";
   const baseUrl = (env("OPENAI_BASE_URL") || "https://api.openai.com/v1").replace(/\/+$/, "");
@@ -192,6 +216,31 @@ async function callOpenAi(args: CallArgs): Promise<unknown> {
 // Deterministic fallback (port of _mock_patch). Bilingual Korean/English
 // keyword matching — keep the Korean keywords. Emits the full action vocabulary
 // (patch + layout + insertBlock) so the whole flow works with zero secrets.
+// Prompt-export mode: build the JSON edit instruction the user pastes into a Claude
+// Code session. References the deck's context files by path (kept small + current)
+// rather than inlining the original generation prompt.
+function editExportResponse(prompt: string, contexts: ContextLike[], deckId?: string): AiActionResponse {
+  const primary = contexts[0];
+  const object = String(primary?.outerHTML ?? primary?.text ?? "");
+  const id = deckId && deckId.trim() ? deckId.trim() : "";
+  const dir = id ? `generated/${id}` : "generated/<deckId>";
+  const editExport: EditExport = {
+    object,
+    user_prompt: prompt,
+    deckId: id,
+    contextFiles: [`${dir}/_prompts.json`, `${dir}/_request.json`, `${dir}/_brief.json`],
+    instruction:
+      `Read docs/ai-initial-generation-pipeline.md (§4, modification protocol) and the contextFiles, then modify ${dir}/ ` +
+      `so the selected element matches the request: "${prompt}". Locate the element by its outerHTML (the \`object\` field), ` +
+      `edit in place (text nodes / inline styles / classes; never set an inline transform; don't reparent), and save. ` +
+      `Then tell the user to click "Reload deck" in the app.`,
+  };
+  const message = id
+    ? 'Prompt-export mode — copy this JSON into a Claude Code session, then click "Reload deck".'
+    : "Prompt-export mode — no deck id is known yet. Generate or load an AI deck first.";
+  return { actions: [], message, mock: true, editExport };
+}
+
 function mockActions(prompt: string, contexts: ContextLike[]): AiActionResponse {
   const ids = contexts.map((c) => c.id as string);
   const p = prompt.toLowerCase();

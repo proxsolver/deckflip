@@ -12,8 +12,6 @@
 // hard-fails. The DeckFiles/GeneratedDeck contract is unchanged.
 
 import {
-  EMIT_DECK_SCHEMA,
-  EMIT_DECK_TOOL,
   EMIT_QA_TOOL,
   QA_SCHEMA,
   EMIT_PLAN_TOOL,
@@ -22,7 +20,7 @@ import {
   EMIT_FOUNDATION_SCHEMA,
   EMIT_SLIDES_TOOL,
   EMIT_SLIDES_SCHEMA,
-  coerceDeckFiles,
+  parseDelimitedDeck,
   coercePlan,
   coerceFoundation,
   coerceSlides,
@@ -40,16 +38,19 @@ import {
   type DeckAsset,
 } from "../../shared/generation";
 import { SINGLE_PASS_SYSTEM_PROMPT, PLAN_TASK, FOUNDATION_TASK, SLIDES_TASK } from "./prompt";
-import { saveDeck, type PromptEntry } from "./storage";
+import { saveDeck, saveExportRequest, type PromptEntry } from "./storage";
 import {
   env,
   webSearchEnabled,
   pMap,
   resolveProviders,
   callWithFallback,
+  callRawWithFallback,
   type Providers,
   type ModelCall,
   type ModelResult,
+  type RawCall,
+  type RawResult,
 } from "./providers";
 import { assembleDeck, deckLint, buildQaUserText, mergeQaFixes, OVERFLOW_GUARD_JS } from "./assemble";
 import { mockDeck } from "./mock";
@@ -86,6 +87,32 @@ export async function handleGenerate(req: GenerationRequest): Promise<GeneratedD
   const gen: GenContext = { assets, imageManifest: imageManifestText(assets), prompts: [] };
   log.imageAssets = assets.length;
 
+  // Prompt-export mode: don't call the API and don't build a mock template. Emit the
+  // EXACT generation prompt so the user can run it in a Claude Code session (their
+  // subscription = no per-token billing, same Opus 4.8). Persist the request + prompt
+  // + image assets to generated/<deckId>/ so Claude Code picks them up and writes the
+  // deck there; the app's "Load it" button pulls it back via /api/load-generated.
+  if (forceMock) {
+    const promptText = buildGenerationPrompt(deckId, request, gen.imageManifest);
+    try {
+      log.savedTo = await saveExportRequest(deckId, request, promptText, assets);
+    } catch (err) {
+      log.storageError = String((err as Error)?.message ?? err);
+      console.error(`[generate] ${deckId} export-request save failed:`, log.storageError);
+    }
+    log.stage = "prompt-export";
+    log.durationMs = Date.now() - startedAt;
+    console.log(`[generate] ${deckId} (prompt-export) ${log.durationMs}ms`);
+    return {
+      deckId,
+      files: { indexHtml: "", styleCss: "", scriptJs: "" },
+      brief: fillBrief(coerceBrief({}), request),
+      message: "Prompt-export mode — copy the prompt into a Claude Code session to generate this deck.",
+      mock: true,
+      promptExport: { kind: "generation", deckId, prompt: promptText, docPath: GEN_DOC_PATH, dir: `generated/${deckId}` },
+    };
+  }
+
   let deck: GeneratedDeck;
   let plan: DeckPlan | undefined;
 
@@ -94,14 +121,16 @@ export async function handleGenerate(req: GenerationRequest): Promise<GeneratedD
     log.stage = "mock";
   } else {
     // Two modes (HTML_PPT_GEN_MODE):
-    //   multi (default) — the structured plan→foundation→slides pipeline. Each call's
-    //     output is bounded (slides built in chunks, then server-assembled), so it can't
-    //     truncate on a large deck. Robust + editable; the safe default.
-    //   single — ONE high-effort "sample recipe" call: the most hand-tuned per-slide
-    //     design (like sample_deck), but the whole deck must fit in one ≤32K-token
-    //     response, so it can truncate → falls back to multi, then mock. Best for SHORT
-    //     decks; raise HTML_PPT_SINGLE_MAX_TOKENS (needs Opus 64k beta) for larger ones.
-    const mode = (env("HTML_PPT_GEN_MODE") || "multi").toLowerCase();
+    //   single (default) — ONE coherent-author pass that emits the whole bespoke deck
+    //     as DELIMITED free-text files (not one structured-output JSON), streamed, with
+    //     continuation-on-truncation. A cut-off response is now SALVAGEABLE (every
+    //     completed file kept; a partial index.html = a shorter deck), so the single
+    //     author's coherence no longer costs the old "tokens spent, nothing returned"
+    //     failure. Closest to the Claude Code result. Falls back to multi, then mock.
+    //   multi — the structured plan→foundation→slides pipeline; output bounded per call
+    //     (chunked + server-assembled). Robust at any size but loses cross-slide
+    //     coherence (chunks render blind). Opt in for very large / cost-bounded runs.
+    const mode = (env("HTML_PPT_GEN_MODE") || "single").toLowerCase();
     log.mode = mode;
     if (mode === "multi") {
       try {
@@ -366,11 +395,16 @@ function chunkPlans(slides: SlidePlan[], max = 6): SlidePlan[][] {
   return chunks;
 }
 
-// --- single-pass "sample recipe" --------------------------------------------
-// ONE high-effort emit_deck call using the SINGLE_PASS_SYSTEM_PROMPT: the model
-// authors the complete, BESPOKE 4-file deck itself (no server assembly), like how
-// sample_deck was made. Web research + a lint-gated QA repair, then the overflow
-// guard is appended for the same clip-safety the assembled path gets.
+// --- single-pass coherent author --------------------------------------------
+// ONE coherent-author pass using SINGLE_PASS_SYSTEM_PROMPT: the model writes the
+// whole BESPOKE deck itself (no server assembly), like how sample_deck was made —
+// but emitted as DELIMITED free-text files (not one structured-output JSON) and
+// STREAMED, so a truncated response is salvageable instead of a total loss. On
+// truncation we CONTINUE the assistant turn (resume where it stopped) rather than
+// paying for a full multi-pass regen. Then the same lint-gated QA repair + overflow
+// guard the other paths use.
+const TRUNCATED_RE = /max_tokens|max_output_tokens|length|incomplete/i;
+
 async function generateSinglePass(
   deckId: string,
   request: GenerationRequest,
@@ -379,43 +413,64 @@ async function generateSinglePass(
   usageAcc: UsageAccumulator,
   gen: GenContext
 ): Promise<GeneratedDeck> {
-  const maxTokens = Number(env("HTML_PPT_SINGLE_MAX_TOKENS") || env("HTML_PPT_GEN_MAX_TOKENS") || "32000");
-  const mk = (ws: boolean): ModelCall => ({
+  const maxTokens = Number(env("HTML_PPT_SINGLE_MAX_TOKENS") || env("HTML_PPT_GEN_MAX_TOKENS") || "64000");
+  const images = imageDataUrls(request);
+  const userText =
+    `위 시스템 지침대로 완성된 bespoke 덱을 §출력 형식의 구분자 마커(===FILE: …===)로 작성하라. 슬라이드마다 맞춤 디자인으로, §샘플 수준의 완성도로. length가 auto면 32~45장.\n\n=== 요청 ===\n${JSON.stringify(briefRequestForModel(request), null, 2)}` +
+    seedCssBlock(request) +
+    gen.imageManifest;
+  const mk = (ws: boolean, assistantPrefix?: string): RawCall => ({
     maxTokens,
-    images: imageDataUrls(request),
-    userText:
-      `위 시스템 지침대로 완성된 bespoke 4파일 덱을 emit_deck 도구로 한 번에 반환하라. 슬라이드마다 맞춤 디자인으로, sample_deck 수준의 완성도로.\n\n=== 요청 ===\n${JSON.stringify(briefRequestForModel(request), null, 2)}` +
-      seedCssBlock(request) +
-      gen.imageManifest,
-    schema: EMIT_DECK_SCHEMA,
-    toolName: EMIT_DECK_TOOL,
-    toolDescription: "Return the complete bespoke deck as four files plus a compact design brief.",
-    webSearch: ws,
+    images: assistantPrefix ? [] : images, // continuation needs no re-sent images
     system: SINGLE_PASS_SYSTEM_PROMPT,
+    userText,
+    assistantPrefix,
+    webSearch: ws,
   });
 
-  // Web research, with a no-search retry so a flaky search call can't fail the run.
-  let genRes: ModelResult;
+  // First call (web research), with a no-search retry so a flaky search can't fail it.
+  let res: RawResult;
   try {
-    genRes = await callWithFallback(providers, mk(webSearchEnabled()), log, "single");
+    res = await callRawWithFallback(providers, mk(webSearchEnabled()), log, "single");
   } catch (err) {
     if (!webSearchEnabled()) throw err;
     log.singleWebSearchAborted = String((err as Error)?.message ?? err);
-    genRes = await callWithFallback(providers, mk(false), log, "singleNoSearch");
+    res = await callRawWithFallback(providers, mk(false), log, "singleNoSearch");
   }
-  log.single = genRes.usage;
-  recordPass(usageAcc, log, "single", genRes.usage);
-  gen.prompts.push({ ts: nowIso(), kind: "generation-single", prompt: mk(false).userText, usage: genRes.usage });
-  log.singleWebSearches = genRes.webSearchCount;
-  if (/max_tokens|max_output_tokens|length|incomplete/.test(genRes.stopReason)) log.singleTruncated = true;
+  log.single = res.usage;
+  recordPass(usageAcc, log, "single", res.usage);
+  gen.prompts.push({ ts: nowIso(), kind: "generation-single", prompt: userText, usage: res.usage });
+  log.singleWebSearches = res.webSearchCount;
 
-  let files = coerceDeckFiles((genRes.input as Record<string, unknown>)?.files);
+  let accumulated = res.text;
+  let stop = res.stopReason;
+  const seenEnd = () => parseDelimitedDeck(accumulated).complete;
+
+  // Continuation loop: resume the truncated turn instead of regenerating. Stops at
+  // the END sentinel, when the model adds nothing, or at the continuation cap.
+  const maxCont = Math.max(0, Number(env("HTML_PPT_SINGLE_MAX_CONTINUATIONS") || "4"));
+  for (let i = 0; i < maxCont && TRUNCATED_RE.test(stop) && !seenEnd(); i++) {
+    log.singleContinuations = i + 1;
+    let cont: RawResult;
+    try {
+      cont = await callRawWithFallback(providers, mk(false, accumulated), log, `singleCont${i}`);
+    } catch (err) {
+      log[`singleCont${i}Error`] = String((err as Error)?.message ?? err);
+      break;
+    }
+    recordPass(usageAcc, log, `singleCont${i}`, cont.usage);
+    if (!cont.text) break;
+    accumulated += cont.text;
+    stop = cont.stopReason;
+  }
+  if (TRUNCATED_RE.test(stop) && !seenEnd()) log.singleTruncated = true;
+
+  const parsed = parseDelimitedDeck(accumulated);
+  let files = parsed.files;
   if (!files) throw new Error("Single-pass generation returned no usable index.html.");
-  const brief = fillBrief(coerceBrief((genRes.input as Record<string, unknown>)?.designBrief), request);
-  let message =
-    typeof (genRes.input as Record<string, unknown>)?.message === "string"
-      ? ((genRes.input as Record<string, unknown>).message as string)
-      : "Deck generated.";
+  log.singleComplete = parsed.complete;
+  const brief = fillBrief(coerceBrief(parsed.brief), request);
+  let message = parsed.message || "Deck generated.";
 
   // Lint-gated, prompt-only QA/repair (same cached prefix → uses SINGLE_PASS prompt).
   const qaMode = (env("HTML_PPT_QA_MODE") || "auto").toLowerCase();
@@ -539,6 +594,27 @@ function seedCssBlock(req: GenerationRequest): string {
   return (
     `\n\n=== 확정 스타일 시드 (사용자가 고른 후보의 style.css) ===\n` +
     `이 토큰/팔레트/폰트/느낌을 **유지하고 확장**하라(완전히 바꾸지 말 것). 전체 덱이 이 후보와 일관돼야 한다.\n\`\`\`css\n${css.slice(0, 8000)}\n\`\`\``
+  );
+}
+
+// The pipeline doc Claude Code follows in prompt-export mode (repo-relative).
+const GEN_DOC_PATH = "docs/ai-initial-generation-pipeline.md";
+
+// Build the copyable generation prompt for prompt-export mode. The embedded request
+// block reuses the SAME builders as the single-pass userText (briefRequestForModel /
+// seedCssBlock / imageManifest), so what Claude Code sees matches what the API would
+// receive — only the wrapper (follow the doc, write to generated/<id>/) differs.
+function buildGenerationPrompt(deckId: string, req: GenerationRequest, imageManifest: string): string {
+  return (
+    `너는 Slidesmith의 덱 생성 엔진이다. \`${GEN_DOC_PATH}\` (섹션 1–3)를 **정확히** 따라 완성된 덱을 만들고, 파일을 \`generated/${deckId}/\`에 직접 써라.\n\n` +
+    `이것은 Claude API 대신 Claude Code(구독, 동일한 Opus 4.8 모델)로 로컬에서 덱을 생성하는 경로다. 위 문서의 단일 패스 완성본 방식대로 전체 덱(length가 auto면 32~45장)을 한 번에 작성하라 — 너는 파일을 직접 쓰므로 응답 길이 제한이 없다.\n\n` +
+    `deckId: ${deckId}\n` +
+    `출력 폴더: generated/${deckId}/\n` +
+    `필수 파일: index.html, style.css, script.js, (3D를 쓰면) three_scene.js, _brief.json\n\n` +
+    `=== 요청 (사용자 위저드 입력) ===\n${JSON.stringify(briefRequestForModel(req), null, 2)}` +
+    seedCssBlock(req) +
+    imageManifest +
+    `\n\n완료하면 사용자에게 앱에서 **"Load it"** 버튼을 눌러 덱을 불러오라고 알려라.`
   );
 }
 

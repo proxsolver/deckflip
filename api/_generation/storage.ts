@@ -7,7 +7,7 @@
 
 import { mkdir, writeFile, readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import type { DeckFiles, DesignBrief } from "../../shared/generation";
+import type { DeckFiles, DesignBrief, DeckAsset } from "../../shared/generation";
 
 export interface DeckMeta {
   brief: DesignBrief;
@@ -87,6 +87,36 @@ export async function saveDeck(deckId: string, files: DeckFiles, meta: DeckMeta)
         const decoded = decodeDataUrl(a.dataUrl);
         if (!decoded) return;
         // a.path is "assets/<name>"; guard the basename against traversal.
+        const base = safeId(a.path.replace(/^assets\//, ""));
+        await writeFile(resolve(dir, "assets", base), decoded);
+      })
+    );
+  }
+  return dir;
+}
+
+// Prompt-export mode (HTML_PPT_AI_MOCK=1): the deck isn't generated server-side —
+// instead we persist the request + the exact generation prompt + any image assets
+// into generated/<deckId>/ so a Claude Code session can pick them up and write the
+// deck files itself. Mirrors the relevant parts of saveDeck. Best-effort caller.
+export async function saveExportRequest(
+  deckId: string,
+  request: unknown,
+  promptMarkdown: string,
+  assets?: DeckAsset[]
+): Promise<string> {
+  const dir = deckDir(deckId);
+  await mkdir(dir, { recursive: true });
+  await Promise.all([
+    writeFile(resolve(dir, "_request.json"), JSON.stringify(request, null, 2), "utf-8"),
+    writeFile(resolve(dir, "_generate-prompt.md"), promptMarkdown, "utf-8"),
+  ]);
+  if (assets && assets.length) {
+    await mkdir(resolve(dir, "assets"), { recursive: true });
+    await Promise.all(
+      assets.map(async (a) => {
+        const decoded = decodeDataUrl(a.dataUrl);
+        if (!decoded) return;
         const base = safeId(a.path.replace(/^assets\//, ""));
         await writeFile(resolve(dir, "assets", base), decoded);
       })

@@ -277,7 +277,7 @@ By default the app runs in **mock mode** (no key required). To use real models, 
 | `HTML_PPT_GEN_MODE` | `multi` (default, chunked & assembled) or `single` (one bespoke call). |
 | `HTML_PPT_GEN_PROVIDER` | Flip provider preference (`anthropic` \| `openai`). |
 | `HTML_PPT_WEB_SEARCH` | Live web research in the plan pass (default on). |
-| `HTML_PPT_AI_MOCK` | Force mock mode even with a key set. |
+| `HTML_PPT_AI_MOCK` | **Prompt-export mode** — skip the API and emit the exact generation prompt / edit JSON for a Claude Code session to run against `generated/<deckId>/` (free local testing on your Claude subscription). See [`docs/ai-initial-generation-pipeline.md`](docs/ai-initial-generation-pipeline.md). |
 | `UNSPLASH_ACCESS_KEY` / `PEXELS_API_KEY` | Stock-photo search for "find & paste a real photo". |
 
 See [`.env.example`](.env.example) for the full, commented list (per-pass token limits, QA mode, timeouts, etc.).

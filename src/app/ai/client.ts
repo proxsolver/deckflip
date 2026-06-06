@@ -15,10 +15,23 @@ export interface AiResult {
   mock: boolean;
 }
 
+// Prompt-export mode (HTML_PPT_AI_MOCK=1): the edit endpoint returns this JSON
+// instruction instead of actions, for the user to paste into a Claude Code session.
+// Mirrors EditExport in api/_editing/handler.ts.
+export interface EditExport {
+  object: string;
+  user_prompt: string;
+  deckId: string;
+  contextFiles: string[];
+  instruction: string;
+}
+
 export interface AiActionResult {
   actions: EditorAction[];
   message: string;
   mock: boolean;
+  /** Present in prompt-export mode instead of actions. */
+  editExport?: EditExport;
 }
 
 // Primary text-edit path: returns the validated action envelope (patch | layout
@@ -27,13 +40,14 @@ export interface AiActionResult {
 export async function requestAiActions(
   prompt: string,
   contexts: SelectedContext[],
-  deckBrief?: DesignBrief
+  deckBrief?: DesignBrief,
+  deckId?: string
 ): Promise<AiActionResult> {
   const ids = contexts.map((c) => c.id).filter((id): id is string => !!id);
   const resp = await fetch("/api/ai-edit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, contexts, deckBrief }),
+    body: JSON.stringify({ prompt, contexts, deckBrief, deckId }),
   });
 
   const data = (await resp.json().catch(() => ({}))) as {
@@ -41,9 +55,15 @@ export async function requestAiActions(
     message?: string;
     error?: string;
     mock?: boolean;
+    editExport?: EditExport;
   };
   if (!resp.ok || data.error) {
     throw new Error(data.error || `AI request failed (${resp.status}).`);
+  }
+
+  // Prompt-export mode: no actions to apply — surface the Claude Code instruction.
+  if (data.editExport) {
+    return { actions: [], message: data.message || "Prompt-export mode.", mock: !!data.mock, editExport: data.editExport };
   }
 
   const actions = validateActions({ actions: data.actions }, ids);

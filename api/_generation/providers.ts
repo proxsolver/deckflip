@@ -81,6 +81,20 @@ export interface ModelCall {
 
 export type ModelResult = { input: unknown; usage: unknown; stopReason: string; webSearchCount: number };
 
+// Free-text (no forced tool) call — used by single-pass delimited generation so a
+// truncated response is salvageable (partial files) rather than unparseable JSON.
+export interface RawCall {
+  maxTokens: number;
+  images: string[]; // data URLs (reference/style cues)
+  system: string;
+  userText: string;
+  /** Partial assistant output to resume from — Anthropic continues this turn. */
+  assistantPrefix?: string;
+  webSearch?: boolean;
+}
+
+export type RawResult = { text: string; usage: unknown; stopReason: string; webSearchCount: number };
+
 // --- provider resolution ----------------------------------------------------
 
 function buildConfig(provider: Provider): ProviderConfig | null {
@@ -118,20 +132,22 @@ export function resolveProviders(log: Record<string, unknown>): Providers {
 }
 
 // Try the primary provider; on ANY error retry the identical call on the fallback
-// (e.g. empty Anthropic balance → OpenAI). Logs which provider served each pass.
-export async function callWithFallback(
+// (e.g. empty Anthropic balance → OpenAI). Generic over the per-provider call so the
+// structured (callWithFallback) and free-text (callRawWithFallback) paths share the
+// exact same retry/fallback/logging. Logs which provider served each pass.
+async function fallbackOver<R>(
   providers: Providers,
-  call: ModelCall,
   log: Record<string, unknown>,
-  label: string
-): Promise<ModelResult> {
+  label: string,
+  run: (cfg: ProviderConfig) => Promise<R>
+): Promise<R> {
   const chain = [providers.primary, providers.fallback].filter((c): c is ProviderConfig => !!c);
   if (!chain.length) throw new Error("No AI provider configured.");
   let lastErr: unknown;
   for (let i = 0; i < chain.length; i++) {
     const cfg = chain[i];
     try {
-      const result = await callWithRetry(cfg, call, log, label);
+      const result = await retryOver(cfg, log, label, run);
       log[`${label}Provider`] = cfg.provider;
       log[`${label}Model`] = cfg.model;
       if (i > 0) log[`${label}Fallback`] = true;
@@ -147,19 +163,19 @@ export async function callWithFallback(
 
 // Retry a single provider on transient errors (429 rate-limit / 5xx / overloaded),
 // honoring the "try again in Xs" hint when present. A 400 (e.g. empty balance) is
-// NOT transient — it throws immediately so callWithFallback moves to the next
-// provider. Default 5 attempts; tune with HTML_PPT_MAX_RETRIES.
-async function callWithRetry(
+// NOT transient — it throws immediately so fallbackOver moves to the next provider.
+// Default 5 attempts; tune with HTML_PPT_MAX_RETRIES.
+async function retryOver<R>(
   cfg: ProviderConfig,
-  call: ModelCall,
   log: Record<string, unknown>,
-  label: string
-): Promise<ModelResult> {
+  label: string,
+  run: (cfg: ProviderConfig) => Promise<R>
+): Promise<R> {
   const maxRetries = Math.max(0, Number(env("HTML_PPT_MAX_RETRIES") || "5"));
   let backoff = 2000;
   for (let attempt = 0; ; attempt++) {
     try {
-      return await callModel(cfg, call);
+      return await run(cfg);
     } catch (err) {
       const msg = String((err as Error)?.message ?? err);
       // Includes flaky network drops (undici "fetch failed"/"terminated", ECONNRESET)
@@ -172,6 +188,27 @@ async function callWithRetry(
       backoff = Math.min(backoff * 2, 30000);
     }
   }
+}
+
+// Structured (forced-tool) call with fallback — unchanged public signature.
+export function callWithFallback(
+  providers: Providers,
+  call: ModelCall,
+  log: Record<string, unknown>,
+  label: string
+): Promise<ModelResult> {
+  return fallbackOver(providers, log, label, (cfg) => callModel(cfg, call));
+}
+
+// Free-text call with fallback (single-pass delimited generation). Returns raw text
+// + stopReason so the caller can detect truncation and continue the assistant turn.
+export function callRawWithFallback(
+  providers: Providers,
+  call: RawCall,
+  log: Record<string, unknown>,
+  label: string
+): Promise<RawResult> {
+  return fallbackOver(providers, log, label, (cfg) => callRawModel(cfg, call));
 }
 
 // Extract "try again in 1.402s" / "in 850ms" from a provider error → ms.
@@ -187,6 +224,25 @@ function parseRetryAfterMs(msg: string): number | null {
 
 function callModel(cfg: ProviderConfig, call: ModelCall): Promise<ModelResult> {
   return cfg.provider === "openai" ? callOpenAi(cfg, call) : callAnthropic(cfg, call);
+}
+
+function callRawModel(cfg: ProviderConfig, call: RawCall): Promise<RawResult> {
+  return cfg.provider === "openai" ? callOpenAiRaw(cfg, call) : callAnthropicRaw(cfg, call);
+}
+
+// Anthropic request headers, optionally carrying a beta flag. Set HTML_PPT_ANTHROPIC_BETA
+// to the extended-output beta (e.g. "output-128k-2025-02-19") to let single-pass request
+// a 64K+ output budget where the account/model supports it. Off by default so an
+// unsupported value can never 400 an otherwise-working call.
+function anthropicHeaders(cfg: ProviderConfig): Record<string, string> {
+  const headers: Record<string, string> = {
+    "x-api-key": cfg.apiKey,
+    "anthropic-version": "2023-06-01",
+    "content-type": "application/json",
+  };
+  const beta = env("HTML_PPT_ANTHROPIC_BETA");
+  if (beta) headers["anthropic-beta"] = beta;
+  return headers;
 }
 
 async function callAnthropic(cfg: ProviderConfig, call: ModelCall): Promise<ModelResult> {
@@ -219,7 +275,7 @@ async function callAnthropic(cfg: ProviderConfig, call: ModelCall): Promise<Mode
   try {
     resp = await fetch(`${cfg.baseUrl}/v1/messages`, {
       method: "POST",
-      headers: { "x-api-key": cfg.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      headers: anthropicHeaders(cfg),
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
@@ -305,6 +361,176 @@ async function callOpenAi(cfg: ProviderConfig, call: ModelCall): Promise<ModelRe
     (it) => it && typeof it === "object" && /web_search/.test(String((it as Record<string, unknown>).type ?? ""))
   ).length;
   return { input, usage: response.usage, stopReason: incomplete, webSearchCount };
+}
+
+// --- free-text (delimited single-pass) calls --------------------------------
+
+// Anthropic free-text call, streamed by default so a long (64K-token) deck doesn't
+// hit a request timeout and so partial output is captured if the stream drops. No
+// forced output tool → the response is raw text we parse with the delimited parser.
+// `assistantPrefix` resumes a truncated turn (continuation): the partial is sent back
+// as the assistant message and the model keeps writing from exactly where it stopped.
+async function callAnthropicRaw(cfg: ProviderConfig, call: RawCall): Promise<RawResult> {
+  const userBlocks: AnthropicContentBlock[] = [];
+  for (const dataUrl of call.images) {
+    const parsed = parseDataUrl(dataUrl);
+    if (parsed) userBlocks.push({ type: "image", source: { type: "base64", media_type: parsed.mime, data: parsed.base64 } });
+  }
+  userBlocks.push({ type: "text", text: call.userText });
+
+  const messages: Record<string, unknown>[] = [{ role: "user", content: userBlocks }];
+  if (call.assistantPrefix && call.assistantPrefix.trim()) {
+    // Anthropic rejects an assistant prefill that ends in whitespace; trim the tail.
+    messages.push({ role: "assistant", content: [{ type: "text", text: call.assistantPrefix.replace(/\s+$/, "") }] });
+  }
+
+  const tools: Record<string, unknown>[] = [];
+  if (call.webSearch) tools.push({ type: "web_search_20250305", name: "web_search", max_uses: Number(env("HTML_PPT_WEB_SEARCH_MAX") || "6") });
+
+  const stream = !/^(0|false|off|no)$/i.test(env("HTML_PPT_GEN_STREAM") || "1");
+  const payload: Record<string, unknown> = {
+    model: cfg.model,
+    max_tokens: call.maxTokens,
+    // Same cached prefix as every pass — keep it first and byte-stable.
+    system: [{ type: "text", text: call.system, cache_control: { type: "ephemeral" } }],
+    messages,
+    stream,
+  };
+  if (tools.length) payload.tools = tools;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
+  let resp: Response;
+  try {
+    resp = await fetch(`${cfg.baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: anthropicHeaders(cfg),
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    throw new Error(`Anthropic API connection failed: ${String((err as Error)?.message ?? err)}`);
+  }
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => "");
+    clearTimeout(timer);
+    throw new Error(`Anthropic API error ${resp.status}: ${detail.slice(0, 1200)}`);
+  }
+
+  try {
+    if (!stream) {
+      const json = (await resp.json()) as { content?: AnthropicContentBlock[]; usage?: unknown; stop_reason?: string };
+      const content = json.content ?? [];
+      const text = content
+        .filter((b) => b.type === "text")
+        .map((b) => String((b as { text?: string }).text ?? ""))
+        .join("");
+      const webSearchCount = content.filter((b) => b.type === "server_tool_use" && (b as { name?: string }).name === "web_search").length;
+      return { text, usage: json.usage, stopReason: json.stop_reason ?? "", webSearchCount };
+    }
+    return await readAnthropicStream(resp);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Parse the Anthropic SSE stream into accumulated text + stop_reason + usage.
+async function readAnthropicStream(resp: Response): Promise<RawResult> {
+  const reader = resp.body?.getReader();
+  if (!reader) throw new Error("Anthropic stream had no readable body.");
+  const decoder = new TextDecoder();
+  let buf = "";
+  let text = "";
+  let stopReason = "";
+  let webSearchCount = 0;
+  let usage: Record<string, unknown> = {};
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buf.indexOf("\n")) !== -1) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      let evt: Record<string, unknown>;
+      try {
+        evt = JSON.parse(data) as Record<string, unknown>;
+      } catch {
+        continue;
+      }
+      const type = String(evt.type ?? "");
+      if (type === "content_block_delta") {
+        const delta = evt.delta as Record<string, unknown> | undefined;
+        if (delta && (delta.type === "text_delta" || typeof delta.text === "string")) text += String(delta.text ?? "");
+      } else if (type === "content_block_start") {
+        const cb = evt.content_block as Record<string, unknown> | undefined;
+        if (cb && cb.type === "server_tool_use" && (cb as { name?: string }).name === "web_search") webSearchCount++;
+      } else if (type === "message_start") {
+        const m = evt.message as Record<string, unknown> | undefined;
+        if (m && m.usage) usage = { ...(m.usage as Record<string, unknown>) };
+      } else if (type === "message_delta") {
+        const d = evt.delta as Record<string, unknown> | undefined;
+        if (d && typeof d.stop_reason === "string") stopReason = d.stop_reason;
+        if (evt.usage) usage = { ...usage, ...(evt.usage as Record<string, unknown>) };
+      } else if (type === "error") {
+        const e = evt.error as Record<string, unknown> | undefined;
+        throw new Error(`Anthropic stream error: ${String(e?.message ?? "unknown")}`);
+      }
+    }
+  }
+  return { text, usage, stopReason, webSearchCount };
+}
+
+// OpenAI free-text fallback (non-streamed; OpenAI caps output ~32K and is only the
+// fallback). Continuation is best-effort via a prior assistant turn.
+async function callOpenAiRaw(cfg: ProviderConfig, call: RawCall): Promise<RawResult> {
+  const maxOut = Math.min(call.maxTokens, 32000);
+  const userParts: unknown[] = call.images.map((url) => ({ type: "input_image", image_url: url }));
+  userParts.push({ type: "input_text", text: call.userText });
+  const input: Record<string, unknown>[] = [
+    { role: "system", content: call.system },
+    { role: "user", content: userParts },
+  ];
+  if (call.assistantPrefix && call.assistantPrefix.trim()) input.push({ role: "assistant", content: call.assistantPrefix });
+
+  const payload: Record<string, unknown> = { model: cfg.model, max_output_tokens: maxOut, input };
+  if (call.webSearch) payload.tools = [{ type: env("HTML_PPT_OPENAI_WEBSEARCH_TOOL") || "web_search" }];
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), cfg.timeoutMs);
+  let resp: Response;
+  try {
+    resp = await fetch(`${cfg.baseUrl}/responses`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    throw new Error(`OpenAI API connection failed: ${String((err as Error)?.message ?? err)}`);
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => "");
+    throw new Error(`OpenAI API error ${resp.status}: ${detail.slice(0, 1200)}`);
+  }
+  const response = (await resp.json()) as Record<string, unknown>;
+  const text = extractOpenAiText(response);
+  if (!text) throw new Error("OpenAI raw response contained no output text (possibly truncated or refused).");
+  const incomplete =
+    response.status === "incomplete"
+      ? String((response.incomplete_details as Record<string, unknown>)?.reason ?? "incomplete")
+      : String(response.status ?? "");
+  const output = Array.isArray(response.output) ? response.output : [];
+  const webSearchCount = output.filter(
+    (it) => it && typeof it === "object" && /web_search/.test(String((it as Record<string, unknown>).type ?? ""))
+  ).length;
+  return { text, usage: response.usage, stopReason: incomplete, webSearchCount };
 }
 
 // Tolerant to the Responses API output shapes (mirrors the editing handler).

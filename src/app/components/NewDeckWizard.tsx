@@ -25,10 +25,11 @@ import {
   type GenerationRequest,
   type GenerationUpload,
   type GeneratedDeck,
+  type PromptExport,
   type CandidateResult,
 } from "@shared/generation";
 import { formatUsage } from "@shared/generation";
-import { requestGeneration, requestCandidates, personaInterview, parseUpload } from "../ai/generate-client";
+import { requestGeneration, requestCandidates, personaInterview, parseUpload, loadGeneratedDeck } from "../ai/generate-client";
 import { logger, downloadLogs } from "../lib/logger";
 import { SparkleIcon } from "./icons";
 
@@ -392,6 +393,8 @@ export function NewDeckWizard({ onClose, onGenerated }: Props) {
               {fmtElapsed(elapsed)}
             </div>
           </div>
+        ) : done && done.promptExport ? (
+          <PromptExportView promptExport={done.promptExport} onGenerated={onGenerated} />
         ) : done ? (
           <div className="wizard-busy wizard-done">
             <div className="wizard-done-check" aria-hidden="true">
@@ -610,6 +613,59 @@ export function NewDeckWizard({ onClose, onGenerated }: Props) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// Prompt-export mode (HTML_PPT_AI_MOCK=1): instead of a generated deck, the user
+// gets the exact prompt to paste into a Claude Code session. After Claude Code
+// writes the deck to generated/<deckId>/, "Load it" pulls it back in.
+function PromptExportView({ promptExport, onGenerated }: { promptExport: PromptExport; onGenerated: (deck: GeneratedDeck) => void }) {
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(promptExport.prompt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setErr("Copy failed — select the text and copy manually.");
+    }
+  };
+  const load = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      onGenerated(await loadGeneratedDeck(promptExport.deckId));
+    } catch (e) {
+      setErr(String((e as Error)?.message ?? e));
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="wizard-busy wizard-done wizard-export">
+      <div className="wizard-busy-title">Generate with Claude Code</div>
+      <div className="wizard-done-msg">
+        Copy this prompt into a Claude Code session in this project. It writes the deck to <code>{promptExport.dir}/</code> following <code>{promptExport.docPath}</code>. When it finishes, click <strong>Load it</strong>.
+      </div>
+      <textarea
+        className="wizard-textarea wizard-export-prompt"
+        readOnly
+        value={promptExport.prompt}
+        rows={10}
+        onFocus={(e) => e.currentTarget.select()}
+      />
+      <div className="actions wizard-actions">
+        <button onClick={copy}>{copied ? "Copied ✓" : "Copy prompt"}</button>
+        <span className="spacer" />
+        <button className="primary" onClick={load} disabled={loading}>
+          {loading ? "Loading…" : "Load it"}
+        </button>
+      </div>
+      {err && <div className="wizard-error">{err}</div>}
     </div>
   );
 }
