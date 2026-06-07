@@ -265,6 +265,34 @@ export interface RegenerateSceneRequest {
   currentSceneJs?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Single-slide GENERATION — author ONE new <section class="slide"> to insert
+// between existing slides (Phase 3 slide management). Like scene regen this emits
+// HTML and renders in the sandboxed iframe, but the editor ALSO sanitizes it
+// (sanitizeHtml + scrubSubtree) before insertion since it lands in a deck the user
+// already trusts. Static only — no <script>/Chart.js.
+// ---------------------------------------------------------------------------
+
+export interface GenerateSlideRequest {
+  /** What the user wants on the new slide, e.g. "a slide comparing 2023 vs 2024 revenue". */
+  prompt: string;
+  /** The deck's design brief (palette/fonts/tone) so the slide stays on-brand. */
+  brief?: DesignBrief;
+  /** outerHTML of the slide(s) around the insertion point, as style/component context. */
+  neighborHtml?: string;
+  /** Where it lands (for the prompt's narrative awareness), 1-based. */
+  position?: { afterIndex?: number; total?: number };
+}
+
+export interface GenerateSlideResponse {
+  /** One complete <section class="slide">…</section>. */
+  html: string;
+  title: string;
+  message: string;
+  usage?: GenUsage;
+  mock: boolean;
+}
+
 export interface RegenerateSceneResponse {
   /** The complete new three_scene.js (exposes window.__htmlPptScene). */
   threeSceneJs: string;

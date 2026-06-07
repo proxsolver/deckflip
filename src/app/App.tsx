@@ -5,7 +5,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Patch } from "@shared/editing";
 import type { EditorTool } from "@/types/messages";
-import type { SelectionPayload, BackgroundLayer } from "@/types/context";
+import type { SelectionPayload, BackgroundLayer, SlideSummary } from "@/types/context";
+import type { InsertSlideSpec } from "@/types/messages";
 import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp } from "@shared/editing";
 import type { SceneParamOp, SceneSectionInfo, SceneAssignOp } from "@shared/editing";
 import { Toolbar } from "./components/Toolbar";
@@ -14,11 +15,12 @@ import { DeckFrame } from "./components/DeckFrame";
 import { AiChat, type ChatMsg } from "./components/AiChat";
 import { ShortcutsHelp } from "./components/ShortcutsHelp";
 import { NewDeckWizard } from "./components/NewDeckWizard";
+import { SlidesPanel } from "./components/SlidesPanel";
 import { SparkleIcon } from "./components/icons";
 import { useEditorBridge } from "./hooks/useEditorBridge";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { requestAiActions, requestAiImages, requestElementRegen, type EditExport } from "./ai/client";
-import { requestSceneRegen, appendDeckPrompt, loadGeneratedDeck } from "./ai/generate-client";
+import { requestSceneRegen, requestSlide, appendDeckPrompt, loadGeneratedDeck } from "./ai/generate-client";
 import { installGlobalErrorCapture, logger } from "./lib/logger";
 import type { DesignBrief, DeckFiles, GeneratedDeck } from "@shared/generation";
 import { formatUsage } from "@shared/generation";
@@ -32,6 +34,9 @@ import {
   exportStandaloneHtml,
   buildDeckFromContents,
   replaceDeckAsset,
+  injectThreeScaffold,
+  addThreeSceneToDeck,
+  DEFAULT_THREE_SCENE_JS,
   downloadDeckFiles,
   type LoadedDeck,
 } from "./io/project-io";
@@ -164,8 +169,14 @@ export function App() {
   // Source of the currently loaded AI-generated deck (so the user can download
   // the raw 4 files); null for disk-loaded decks.
   const [hasAiSource, setHasAiSource] = useState(false);
+  // Slide-management filmstrip (Phase 3).
+  const [slidesOpen, setSlidesOpen] = useState(false);
+  const [slidesList, setSlidesList] = useState<SlideSummary[]>([]);
+  const [slideBusy, setSlideBusy] = useState(false);
   const aiFilesRef = useRef<DeckFiles | null>(null);
   const lastDeckIdRef = useRef<string>("");
+  // Set by "Add 3D background" so the new layer is auto-selected after the reload.
+  const pendingSelect3DRef = useRef(false);
   // Debounced autosave of the working deck (set after the bridge exists).
   const scheduleAutosaveRef = useRef<() => void>(() => {});
   const autosaveTimer = useRef<number | null>(null);
@@ -206,6 +217,11 @@ export function App() {
       bridge.setEditMode(editModeRef.current);
       bridge.setTool("select");
       setStatus("Editor ready.");
+      // Just added a 3D layer → auto-select it once the scene has initialized.
+      if (pendingSelect3DRef.current) {
+        pendingSelect3DRef.current = false;
+        window.setTimeout(() => void bridge.select3DLayer(), 400);
+      }
     },
     onSelection: (payload) => setSelection(payload),
     onMutation: (payload) => {
@@ -426,32 +442,177 @@ export function App() {
       if (!deck) throw new Error("Load a deck first.");
       const currentSceneJs =
         aiFilesRef.current?.threeSceneJs ?? (deck.files.has("three_scene.js") ? await deck.files.get("three_scene.js")!.text() : undefined);
-      if (!currentSceneJs) {
-        throw new Error("This deck has no 3D background to regenerate. Generate a deck with 3D enabled first.");
+
+      // No 3D yet → ADD a layer: author a fresh scene (no currentSceneJs) and inject
+      // the canvas/container/script scaffold so the deck gains an AI-editable 3D
+      // background. Requires an AI deck (we rebuild + persist from its source files).
+      const isAdd = !currentSceneJs;
+      if (isAdd && !aiFilesRef.current) {
+        throw new Error("Adding a 3D background is available for AI-generated decks. Generate a deck first.");
       }
 
       const result = await requestSceneRegen(prompt, briefRef.current ?? undefined, currentSceneJs);
       void appendDeckPrompt(lastDeckIdRef.current, { kind: "scene-regen", prompt, summary: result.threeDMotif });
 
-      // Hot-swap three_scene.js and reload the iframe so the new scene runs.
-      const next = replaceDeckAsset(deck, "three_scene.js", result.threeSceneJs, "text/javascript");
-      deckRef.current = next;
-      setSelection(EMPTY_SELECTION);
-      setSrcDoc(next.html + "\n<!-- scene-regen -->");
+      if (isAdd) {
+        // Inject the scaffold into the source HTML, attach the new file, and rebuild
+        // the deck so three.js + three_scene.js load and __htmlPptScene appears.
+        const base = aiFilesRef.current!;
+        const files: DeckFiles = {
+          ...base,
+          indexHtml: injectThreeScaffold(base.indexHtml),
+          threeSceneJs: result.threeSceneJs,
+        };
+        const next = buildDeckFromContents(files);
+        releaseDeck(deck);
+        deckRef.current = next;
+        aiFilesRef.current = files;
+        setSelection(EMPTY_SELECTION);
+        setSrcDoc(next.html + "\n<!-- scene-added -->");
+      } else {
+        // Hot-swap three_scene.js and reload the iframe so the new scene runs.
+        const next = replaceDeckAsset(deck, "three_scene.js", result.threeSceneJs, "text/javascript");
+        deckRef.current = next;
+        setSelection(EMPTY_SELECTION);
+        setSrcDoc(next.html + "\n<!-- scene-regen -->");
+        if (aiFilesRef.current) aiFilesRef.current = { ...aiFilesRef.current, threeSceneJs: result.threeSceneJs };
+      }
 
-      // Persist: update the AI source files + brief motif so the change survives
-      // reload/restore (only AI decks are persisted).
+      // Persist: update brief motif so the change survives reload/restore (AI decks).
       if (aiFilesRef.current) {
-        aiFilesRef.current = { ...aiFilesRef.current, threeSceneJs: result.threeSceneJs };
         if (briefRef.current) briefRef.current = { ...briefRef.current, threeDMotif: result.threeDMotif };
         persistLastDeck({ deckId: lastDeckIdRef.current, files: aiFilesRef.current, brief: briefRef.current });
       }
 
       const usage = result.usage ? ` · ${formatUsage(result.usage)}` : "";
+      const verb = isAdd ? "Added 3D background" : "new 3D animation";
       setStatus(`${result.mock ? "Demo" : "AI"}: ${result.message}${usage}`);
-      return { message: `${result.message} (new 3D animation: ${result.threeDMotif})`, keys: ["scene:regenerated"], mock: result.mock };
+      return { message: `${result.message} (${verb}: ${result.threeDMotif})`, keys: [isAdd ? "scene:added" : "scene:regenerated"], mock: result.mock };
     },
     []
+  );
+
+  // Toolbar "Add 3D background" — just ADD a starter 3D layer (NO AI call): inject
+  // the canvas scaffold + a minimal starter three_scene.js so the layer exists, is
+  // selectable (Layers picker / auto-selected here), and is AI-editable. Works for
+  // any loaded deck (AI or disk). The user then uses AI 3D mode to author the
+  // animation they actually want.
+  const onAdd3D = useCallback(() => {
+    const deck = deckRef.current;
+    if (!deck) {
+      setStatus("Load a deck first.");
+      return;
+    }
+    if (deck.files.has("three_scene.js") || /three-canvas-container/.test(deck.html)) {
+      setStatus("This deck already has a 3D background layer.");
+      return;
+    }
+    try {
+      const next = addThreeSceneToDeck(deck, DEFAULT_THREE_SCENE_JS);
+      deckRef.current = next;
+      // AI decks: also inject into the persisted source so it survives reload/restore.
+      if (aiFilesRef.current) {
+        aiFilesRef.current = {
+          ...aiFilesRef.current,
+          indexHtml: injectThreeScaffold(aiFilesRef.current.indexHtml),
+          threeSceneJs: DEFAULT_THREE_SCENE_JS,
+        };
+        if (briefRef.current) briefRef.current = { ...briefRef.current, threeDMotif: "starter particles" };
+        persistLastDeck({ deckId: lastDeckIdRef.current, files: aiFilesRef.current, brief: briefRef.current });
+      }
+      pendingSelect3DRef.current = true; // auto-select once the iframe reloads
+      setSelection(EMPTY_SELECTION);
+      setSrcDoc(next.html + "\n<!-- scene-added -->");
+      setStatus("3D layer added & selected. Open AI, switch on 3D mode, then describe the animation — or tune it in the Scene panel.");
+    } catch (err) {
+      setStatus(`Could not add 3D: ${(err as Error)?.message ?? err}`);
+    }
+  }, []);
+
+  // --- Slide management (Phase 3) ------------------------------------------
+  const refreshSlides = useCallback(async () => {
+    if (!deckRef.current) {
+      setSlidesList([]);
+      return;
+    }
+    setSlidesList(((await bridge.listSlides()) as SlideSummary[]) ?? []);
+  }, [bridge]);
+
+  const onToggleSlides = useCallback(() => {
+    setSlidesOpen((open) => {
+      if (!open) void refreshSlides();
+      return !open;
+    });
+  }, [refreshSlides]);
+
+  // Keep the filmstrip in sync when the slide count changes (insert/delete) while open.
+  useEffect(() => {
+    if (slidesOpen) void refreshSlides();
+  }, [slidesOpen, slide.total, refreshSlides]);
+
+  const onGoToSlide = useCallback((index: number) => void bridge.goToSlide(index + 1), [bridge]);
+
+  // Structural ops require edit mode (the editor gates mutations on it).
+  const onInsertSlide = useCallback(
+    async (index: number, position: InsertSlideSpec["position"], kind: "blank" | "duplicate") => {
+      if (!editModeRef.current) return setStatus("Turn Edit Mode ON to change slides.");
+      await bridge.insertSlide({ index, position, kind });
+      await refreshSlides();
+    },
+    [bridge, refreshSlides]
+  );
+
+  const onDeleteSlide = useCallback(
+    async (index: number) => {
+      if (!editModeRef.current) return setStatus("Turn Edit Mode ON to change slides.");
+      await bridge.deleteSlide(index);
+      await refreshSlides();
+    },
+    [bridge, refreshSlides]
+  );
+
+  const onMoveSlide = useCallback(
+    async (from: number, to: number) => {
+      if (!editModeRef.current) return setStatus("Turn Edit Mode ON to change slides.");
+      await bridge.moveSlide(from, to);
+      await refreshSlides();
+    },
+    [bridge, refreshSlides]
+  );
+
+  // AI slide: author one new <section class="slide"> from a prompt (+ neighbour
+  // slides as style context), then insert it (sanitized in the editor).
+  const onAiInsertSlide = useCallback(
+    async (index: number, position: InsertSlideSpec["position"], prompt: string) => {
+      if (!editModeRef.current) return setStatus("Turn Edit Mode ON to add slides.");
+      setSlideBusy(true);
+      setStatus("Generating a slide…");
+      try {
+        let neighborHtml: string | undefined;
+        try {
+          const clean = (await bridge.getCleanHtml()) as string;
+          const doc = new DOMParser().parseFromString(clean, "text/html");
+          const secs = Array.from(doc.querySelectorAll<HTMLElement>("section.slide, .slide"));
+          neighborHtml = [secs[index], secs[index + 1]].filter(Boolean).map((e) => e.outerHTML).join("\n");
+        } catch {
+          /* style context is best-effort */
+        }
+        const res = await requestSlide(prompt, briefRef.current ?? undefined, neighborHtml, {
+          afterIndex: index + 1,
+          total: slidesList.length,
+        });
+        void appendDeckPrompt(lastDeckIdRef.current, { kind: "edit", prompt: `[insert slide] ${prompt}` });
+        await bridge.insertSlide({ index, position, kind: "html", html: res.html });
+        await refreshSlides();
+        const usage = res.usage ? ` · ${formatUsage(res.usage)}` : "";
+        setStatus(`${res.mock ? "Demo" : "AI"}: ${res.message}${usage}`);
+      } catch (err) {
+        setStatus(`Could not generate slide: ${(err as Error)?.message ?? err}`);
+      } finally {
+        setSlideBusy(false);
+      }
+    },
+    [bridge, refreshSlides, slidesList.length]
   );
 
   // Used by the chat: re-read the (possibly mutated) selection, fetch safe
@@ -469,6 +630,14 @@ export function App() {
 
       const ctxs = await bridge.getSelectionContexts();
       if (!ctxs || !ctxs.length) throw new Error("Select an object first, then ask.");
+
+      // Selected the 3D background layer itself → the user wants to (re)generate the
+      // animation, NOT patch the canvas element. Auto-route to scene regen regardless
+      // of the 3D-mode toggle / prompt wording (an element patch on the canvas does
+      // nothing visible — this was the "it doesn't apply to the background" bug).
+      if (/id=["']three-canvas-container/.test(ctxs[0]?.outerHTML || "")) {
+        return onRegenerateScene(prompt);
+      }
 
       // Persist this modification prompt to the deck's durable server-side history.
       void appendDeckPrompt(lastDeckIdRef.current, {
@@ -517,6 +686,7 @@ export function App() {
             if (a.type === "patch") return Object.keys(a.patch);
             if (a.type === "layout") return [`layout:${a.op}`];
             if (a.type === "sceneParam") return [`scene:${a.key}`];
+            if (a.type === "chart") return [`chart:${a.chartType}`];
             return [`block:${a.blockType}`];
           })
         )
@@ -685,10 +855,13 @@ export function App() {
         onApplySceneParam={onApplySceneParam}
         onListSceneSections={onListSceneSections}
         onApplySceneAssignment={onApplySceneAssignment}
+        onAdd3D={onAdd3D}
         onListBackgroundMotion={onListBackgroundMotion}
         onApplyBackgroundMotion={onApplyBackgroundMotion}
         onPrev={() => bridge.prevSlide()}
         onNext={() => bridge.nextSlide()}
+        onToggleSlides={onToggleSlides}
+        slidesOpen={slidesOpen}
         onDuplicate={() => bridge.duplicateSelected()}
         onDelete={() => bridge.deleteSelected()}
         onBringFront={() => bridge.bringFront()}
@@ -707,25 +880,40 @@ export function App() {
         onHelp={() => setHelpOpen(true)}
       />
 
-      <div className="deck-pane">
-        {srcDoc ? (
-          <DeckFrame ref={iframeRef} srcDoc={srcDoc} />
-        ) : (
-          <div className="deck-empty">
-            <div className="empty-card">
-              <div className="empty-icon"><SparkleIcon width={26} height={26} /></div>
-              <h2>Let's make your presentation</h2>
-              <p>Describe your topic and AI builds a polished, on-brand deck in about a minute. You can fine-tune everything afterward.</p>
-              <button className="empty-cta" onClick={() => setWizardOpen(true)}>
-                <SparkleIcon width={17} height={17} /> Create with AI
-              </button>
-              <button className="empty-link" onClick={onOpenFolder}>or open an existing deck</button>
+      <div className={`deck-pane${slidesOpen && srcDoc ? " with-slides" : ""}`}>
+        {slidesOpen && srcDoc && (
+          <SlidesPanel
+            slides={slidesList}
+            current={Math.max(0, (slide.current || 1) - 1)}
+            busy={slideBusy}
+            onClose={() => setSlidesOpen(false)}
+            onGoTo={onGoToSlide}
+            onInsert={(i, p, k) => void onInsertSlide(i, p, k)}
+            onAiInsert={(i, p, t) => void onAiInsertSlide(i, p, t)}
+            onDelete={(i) => void onDeleteSlide(i)}
+            onMove={(f, t) => void onMoveSlide(f, t)}
+          />
+        )}
+        <div className="deck-stage">
+          {srcDoc ? (
+            <DeckFrame ref={iframeRef} srcDoc={srcDoc} />
+          ) : (
+            <div className="deck-empty">
+              <div className="empty-card">
+                <div className="empty-icon"><SparkleIcon width={26} height={26} /></div>
+                <h2>Let's make your presentation</h2>
+                <p>Describe your topic and AI builds a polished, on-brand deck in about a minute. You can fine-tune everything afterward.</p>
+                <button className="empty-cta" onClick={() => setWizardOpen(true)}>
+                  <SparkleIcon width={17} height={17} /> Create with AI
+                </button>
+                <button className="empty-link" onClick={onOpenFolder}>or open an existing deck</button>
+              </div>
             </div>
-          </div>
-        )}
-        {editMode && selection.id && (
-          <Inspector selection={selection} onPatch={applyPatch} onClose={() => bridge.deselect()} />
-        )}
+          )}
+          {editMode && selection.id && (
+            <Inspector selection={selection} onPatch={applyPatch} onClose={() => bridge.deselect()} />
+          )}
+        </div>
       </div>
 
       <div className="statusbar">{status}</div>

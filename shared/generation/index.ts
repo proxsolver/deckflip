@@ -15,3 +15,4 @@ export * from "./wizard";
 export * from "./types";
 export * from "./schemas";
 export * from "./pricing";
+export * from "./image-slots";

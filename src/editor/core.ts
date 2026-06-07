@@ -10,8 +10,8 @@
 //  - Edit-OFF is a fully clean presentation view.
 
 import type { Patch, PatchOp } from "@shared/editing";
-import type { SelectionPayload, SelectedContext, TextNodeInfo, BackgroundLayer } from "@/types/context";
-import type { EditorTool } from "@/types/messages";
+import type { SelectionPayload, SelectedContext, TextNodeInfo, BackgroundLayer, SlideSummary } from "@/types/context";
+import type { EditorTool, InsertSlideSpec } from "@/types/messages";
 import { emit } from "./events";
 import { STATE, BLOCK_SELECTOR, NEVER_SELECT_SELECTOR, BACKGROUND_SELECTOR } from "./state";
 import { saveState, undo as historyUndo, redo as historyRedo, resetHistory } from "./history";
@@ -42,6 +42,7 @@ import {
   listSceneSections,
   applySceneAssignment,
 } from "./scene";
+import { applyChartTypeToElement } from "./chart";
 
 // Durable per-element marker for anchoring AI chat threads. Deliberately NOT a
 // `data-html-ppt-*` name so getCleanHtml keeps it — it survives undo (it's in the
@@ -395,6 +396,9 @@ function listBackgroundLayers(): BackgroundLayer[] {
   const out: BackgroundLayer[] = [];
   document.querySelectorAll<HTMLElement>(BACKGROUND_SELECTOR).forEach((el) => {
     if (seen.has(el) || el.closest(".slide") || isEditorUi(el)) return;
+    // The 3D layer is represented by its #three-canvas-container — don't also list
+    // the inner <canvas> as a second, duplicate entry.
+    if (el.tagName === "CANVAS" && el.closest("#three-canvas-container")) return;
     seen.add(el);
     const cs = window.getComputedStyle(el);
     if (cs.display === "none") return;
@@ -411,6 +415,15 @@ function selectById(id: string): boolean {
   const el = STATE.idLookup.get(String(id)) as HTMLElement | undefined;
   if (!el || !document.body.contains(el)) return false;
   return selectElement(el, { raw: true });
+}
+
+// Select the 3D background layer (the #three-canvas-container) directly — used right
+// after "Add 3D background" so the new layer is immediately selected/visible, and
+// reachable even though it sits at body level with pointer-events:none.
+function select3DLayer(): boolean {
+  const c = document.getElementById("three-canvas-container") as HTMLElement | null;
+  if (!c) return false;
+  return selectElement(c, { raw: true });
 }
 
 // Scene params + universal CSS-animation (background-motion) control live in
@@ -1192,15 +1205,22 @@ function scheduleSlideCheck(replay = true): void {
   STATE.slideCheckTimer = setTimeout(() => updateCurrentSlideFromViewport(replay), 80);
 }
 
+// One persistent observer, reused across structural changes. Re-observing an
+// already-observed slide is a no-op, so inserting/moving a slide just calls
+// observeSlide() again to pick up the new node without leaking observers.
+let slideObserver: IntersectionObserver | null = null;
+
 function observeSlide(): void {
   const list = slides();
   if (!list.length) return;
   updateCurrentSlideFromViewport(false);
   if (typeof IntersectionObserver === "undefined") return;
-  const observer = new IntersectionObserver(() => scheduleSlideCheck(true), {
-    threshold: [0.05, 0.3, 0.5, 0.8, 0.95],
-  });
-  list.forEach((s) => observer.observe(s));
+  if (!slideObserver) {
+    slideObserver = new IntersectionObserver(() => scheduleSlideCheck(true), {
+      threshold: [0.05, 0.3, 0.5, 0.8, 0.95],
+    });
+  }
+  list.forEach((s) => slideObserver!.observe(s));
 }
 
 function goToSlide(index: number): void {
@@ -1215,6 +1235,129 @@ function goToSlide(index: number): void {
   updateOverlay();
   setTimeout(() => replaySlideAnimation(list[clamped]), 360);
   setTimeout(() => updateCurrentSlideFromViewport(false), 420);
+}
+
+// ---------------------------------------------------------------------------
+// Slide management (Phase 3): list / insert / delete / move whole slides.
+// Structural mutations of the .presentation; each records one undo snapshot and
+// re-observes so the new layout tracks + reveals correctly.
+// ---------------------------------------------------------------------------
+
+// The scroll container that holds the slides (parent of the first .slide).
+function presentationEl(): HTMLElement | null {
+  return slides()[0]?.parentElement ?? document.querySelector<HTMLElement>(".presentation");
+}
+
+// A short, human title for the filmstrip: first heading, else first text.
+function slideTitle(slide: HTMLElement): string {
+  const head = slide.querySelector("h1,h2,h3,.slide-title,[class*='title'],[class*='Title']");
+  const raw = (head?.textContent || slide.textContent || "").replace(/\s+/g, " ").trim();
+  return raw.slice(0, 80);
+}
+
+function listSlidesInternal(): SlideSummary[] {
+  return slides().map((s, index) => ({ index, title: slideTitle(s) }));
+}
+
+// Strip editor markers + per-object AI thread ids from a fresh slide subtree so a
+// duplicate/inserted slide is a clean, new object.
+function cleanSlideMarkers(node: HTMLElement): void {
+  const all = [node, ...Array.from(node.querySelectorAll<HTMLElement>("*"))];
+  for (const el of all) {
+    el.removeAttribute("contenteditable");
+    el.removeAttribute("data-html-ppt-live-edit");
+    el.removeAttribute("data-html-ppt-replay-lock");
+    el.removeAttribute(AI_ID_ATTR);
+  }
+  node.classList.remove(revealClass()); // start hidden; reveal on view
+}
+
+const BLANK_SLIDE_INNER =
+  `<div class="slide-content" style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100%;gap:0.5em;text-align:center;padding:8vh 9vw;">` +
+  `<h2 class="anim" style="font-size:3rem;line-height:1.1;">새 슬라이드</h2>` +
+  `<p class="anim anim-2" style="font-size:1.3rem;opacity:0.8;">여기에 내용을 입력하세요</p>` +
+  `</div>`;
+
+// Build the slide element to insert for a given spec. Returns null if it can't.
+function buildSlideNode(spec: InsertSlideSpec, list: HTMLElement[]): HTMLElement | null {
+  if (spec.kind === "duplicate") {
+    const src = list[spec.index];
+    if (!src) return null;
+    return src.cloneNode(true) as HTMLElement;
+  }
+  if (spec.kind === "html") {
+    const tpl = document.createElement("template");
+    tpl.innerHTML = sanitizeHtml(String(spec.html ?? ""));
+    scrubSubtree(tpl.content);
+    let node = tpl.content.querySelector<HTMLElement>("section.slide, .slide");
+    if (!node) {
+      // No .slide wrapper in the AI output — wrap whatever it returned in one.
+      node = document.createElement("section");
+      node.className = "slide";
+      node.append(...Array.from(tpl.content.childNodes));
+    }
+    if (!node.classList.contains("slide")) node.classList.add("slide");
+    return node;
+  }
+  const blank = document.createElement("section");
+  blank.className = "slide";
+  blank.innerHTML = BLANK_SLIDE_INNER;
+  return blank;
+}
+
+function insertSlideInternal(spec: InsertSlideSpec): number {
+  const container = presentationEl();
+  if (!container) return -1;
+  const list = slides();
+  const node = buildSlideNode(spec, list);
+  if (!node) return -1;
+
+  saveState();
+  cleanSlideMarkers(node);
+
+  const ref = list[spec.index] ?? null;
+  if (!ref) container.appendChild(node);
+  else if (spec.position === "before") container.insertBefore(node, ref);
+  else container.insertBefore(node, ref.nextSibling);
+
+  observeSlide();
+  const newIndex = slides().indexOf(node);
+  emitMutation();
+  emitSlideChanged();
+  if (newIndex >= 0) goToSlide(newIndex);
+  return newIndex;
+}
+
+function deleteSlideInternal(index: number): boolean {
+  const list = slides();
+  const el = list[index];
+  if (!el) return false;
+  if (list.length <= 1) return false; // never leave a deck with zero slides
+  saveState();
+  setSelection([]);
+  el.remove();
+  observeSlide();
+  emitMutation();
+  emitSlideChanged();
+  const next = Math.max(0, Math.min(index, slides().length - 1));
+  goToSlide(next);
+  return true;
+}
+
+function moveSlideInternal(from: number, to: number): boolean {
+  const list = slides();
+  const el = list[from];
+  const target = list[to];
+  if (!el || !target || from === to) return false;
+  saveState();
+  const container = el.parentElement!;
+  if (to > from) container.insertBefore(el, target.nextSibling);
+  else container.insertBefore(el, target);
+  observeSlide();
+  emitMutation();
+  emitSlideChanged();
+  goToSlide(slides().indexOf(el));
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -1746,6 +1889,9 @@ export const editorApi = {
         }
       } else if (a.type === "sceneParam") {
         if (applySceneParamInternal(a)) mutated = true;
+      } else if (a.type === "chart") {
+        const el = STATE.idLookup.get(a.id) as HTMLElement | undefined;
+        if (el && document.body.contains(el) && applyChartTypeToElement(el, a.chartType)) mutated = true;
       }
     }
     if (lastInserted) setSelection([lastInserted]);
@@ -1771,6 +1917,9 @@ export const editorApi = {
   },
   selectById(id: string): void {
     selectById(id);
+  },
+  select3DLayer(): boolean {
+    return select3DLayer();
   },
   listBackgroundLayers(): BackgroundLayer[] {
     return listBackgroundLayers();
@@ -1815,7 +1964,9 @@ export const editorApi = {
       return;
     }
     setSelection([]);
+    observeSlide(); // innerHTML restore re-created slide nodes — re-observe them
     scheduleSlideCheck(false);
+    emitSlideChanged();
     toast("Undo");
   },
   redo(): void {
@@ -1824,7 +1975,9 @@ export const editorApi = {
       return;
     }
     setSelection([]);
+    observeSlide(); // innerHTML restore re-created slide nodes — re-observe them
     scheduleSlideCheck(false);
+    emitSlideChanged();
     toast("Redo");
   },
   duplicateSelected(): void {
@@ -1887,6 +2040,23 @@ export const editorApi = {
   },
   goToSlide(n: number): void {
     goToSlide(Number(n) - 1);
+  },
+  // Slide management (Phase 3). listSlides is read-only; the mutators require edit
+  // mode and run under one undo snapshot each.
+  listSlides(): SlideSummary[] {
+    return listSlidesInternal();
+  },
+  insertSlide(spec: InsertSlideSpec): number {
+    if (!STATE.enabled) return -1;
+    return insertSlideInternal(spec);
+  },
+  deleteSlide(index: number): boolean {
+    if (!STATE.enabled) return false;
+    return deleteSlideInternal(Number(index));
+  },
+  moveSlide(from: number, to: number): boolean {
+    if (!STATE.enabled) return false;
+    return moveSlideInternal(Number(from), Number(to));
   },
   getCleanHtml(): string {
     return cleanHtml();

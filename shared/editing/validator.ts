@@ -17,9 +17,11 @@ import {
   type BlockSpec,
   type BlockSlotValue,
   type SceneParamOp,
+  type ChartOp,
 } from "./actions";
 import { SCENE_PARAMS, type SceneParamKey } from "./scene-params";
 import { BLOCK_TYPE_SET, BLOCK_TEMPLATES, slotNamesFor, type BlockType } from "./blocks";
+import { CHART_TYPE_SET, type ChartType } from "./chart";
 
 const ALLOWED_PATCH_KEYS = new Set<string>(PATCH_KEYS);
 
@@ -431,6 +433,21 @@ export function validateSceneParamOp(raw: unknown): SceneParamOp | null {
 }
 
 /**
+ * Validate a chart-type op. `id` must be one of the live selected ids; `chartType`
+ * must be a vetted type. Returns null on any failure. The editor resolves the id
+ * to the chart element and recreates the Chart.js instance with the new type.
+ */
+export function validateChartOp(raw: unknown, allowedIds: readonly string[]): ChartOp | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const id = r.id;
+  if (typeof id !== "string" || !new Set(allowedIds).has(id)) return null;
+  const chartType = String(r.chartType ?? "");
+  if (!CHART_TYPE_SET.has(chartType)) return null;
+  return { id, chartType: chartType as ChartType };
+}
+
+/**
  * Validate a full action envelope (`{ actions: [...] }` or a bare array) against
  * the live selected ids. Dispatches per action `type`; invalid actions are
  * dropped. Never throws.
@@ -464,6 +481,9 @@ export function validateActions(raw: unknown, allowedIds: readonly string[]): Ed
     } else if (type === "sceneParam") {
       const op = validateSceneParamOp(item);
       if (op) out.push({ type: "sceneParam", ...op });
+    } else if (type === "chart") {
+      const op = validateChartOp(item, allowedIds);
+      if (op) out.push({ type: "chart", ...op });
     }
   }
   return out;

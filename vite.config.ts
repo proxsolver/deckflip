@@ -8,6 +8,7 @@ import { handleAiImage, handleAiImageSearch } from "./api/_editing/image";
 import { handleGenerate } from "./api/_generation/generate";
 import { handleLoadGenerated } from "./api/_generation/load";
 import { handleRegenerateScene } from "./api/_generation/scene";
+import { handleGenerateSlide } from "./api/_generation/slide";
 import { handleParseUpload } from "./api/_generation/parse";
 import { handleGenerateCandidates } from "./api/_generation/candidates";
 import { handlePersonaInterview } from "./api/_generation/persona";
@@ -56,6 +57,7 @@ function aiDevApi(): Plugin {
       jsonPost(server, "/api/generate", (p) => handleGenerate(p as Parameters<typeof handleGenerate>[0]));
       jsonPost(server, "/api/load-generated", (p) => handleLoadGenerated(p as Parameters<typeof handleLoadGenerated>[0]));
       jsonPost(server, "/api/regenerate-scene", (p) => handleRegenerateScene(p as Parameters<typeof handleRegenerateScene>[0]));
+      jsonPost(server, "/api/generate-slide", (p) => handleGenerateSlide(p as Parameters<typeof handleGenerateSlide>[0]));
       jsonPost(server, "/api/parse-upload", (p) => handleParseUpload(p as Parameters<typeof handleParseUpload>[0]));
       jsonPost(server, "/api/generate-candidates", (p) => handleGenerateCandidates(p as Parameters<typeof handleGenerateCandidates>[0]));
       jsonPost(server, "/api/persona-interview", (p) => handlePersonaInterview(p as Parameters<typeof handlePersonaInterview>[0]));

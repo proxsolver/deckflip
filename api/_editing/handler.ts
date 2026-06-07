@@ -17,8 +17,10 @@ import {
   BLOCK_TYPES,
   SCENE_PARAMS,
   SCENE_PARAM_KEYS,
+  CHART_TYPES,
   type EditorAction,
   type BlockType,
+  type ChartType,
 } from "../../shared/editing";
 import { env, extractResponseText, type ContextLike } from "./common";
 
@@ -98,9 +100,35 @@ export async function handleAiEdit(req: AiEditRequest): Promise<AiActionResponse
       : "AI changes generated.";
   const actions = validateActions(raw, ids);
   if (actions.length === 0) {
-    throw new Error("AI returned no valid actions after validation.");
+    // The request validated down to nothing the editor can safely apply — usually
+    // because it asks for something OUTSIDE the patch/layout/block vocabulary (e.g.
+    // changing a chart's type/data, which lives in the deck's own JS). Don't throw
+    // an opaque error; explain it so the user knows why and what to do instead.
+    return { actions: [], message: noValidActionsMessage(contexts), mock: false };
   }
   return { actions, message, mock: false };
+}
+
+// Friendly explanation for a request that produced no applicable actions. When the
+// primary selection is a chart (a Chart.js <canvas>), say so specifically — its
+// type/data is drawn by deck JS the editor never touches, so quick edits can't
+// reach it. Otherwise nudge toward a style/layout change or Rebuild mode.
+function noValidActionsMessage(contexts: ContextLike[]): string {
+  const primary = contexts[0];
+  const tag = String(primary?.tag ?? "").toLowerCase();
+  const html = String(primary?.outerHTML ?? "").toLowerCase();
+  const isChart = tag === "canvas" || html.includes("<canvas");
+  if (isChart) {
+    return (
+      "I can switch a chart's TYPE (bar, line, pie, doughnut, radar, polarArea) — try \"make it a bar chart\". " +
+      "I can't rewrite a chart's data or labels from the visual editor, though — that lives in the deck's own " +
+      "Chart.js code. To change the numbers, edit the deck's source (script.js) or regenerate the slide."
+    );
+  }
+  return (
+    "I couldn't turn that into a safe quick edit. Try a style or layout change (color, size, position, " +
+    "border, animation), or switch to Rebuild mode to redesign the element from scratch."
+  );
 }
 
 interface CallArgs {
@@ -126,6 +154,9 @@ async function callOpenAi(args: CallArgs): Promise<unknown> {
     '- "sceneParam": tune the deck\'s 3D / canvas BACKGROUND animation — set `sceneKey` (one of the allowed scene params) ' +
     "and `sceneValue` (a number within that param's range, or a CSS color). Use this ONLY when the user asks to change the " +
     "moving 3D/canvas background itself (spin speed, particles, light color, brightness); it has no `id`.\n" +
+    '- "chart": change a CHART\'s type — set `id` to the selected chart object\'s id and `chartType` to one of the allowed ' +
+    "chart types. Use this when the selected object is a chart/graph (a <canvas>) and the user asks to switch its form " +
+    "(e.g. to a bar/line/pie chart). The chart's data is preserved; you only pick the new type.\n" +
     "Set every unused field to null. " +
     "Never return full HTML, JavaScript, CSS files, markdown, or explanations outside the JSON schema. " +
     "Preserve HTML semantics and animation classes. Prefer small, safe edits. " +
@@ -152,12 +183,14 @@ async function callOpenAi(args: CallArgs): Promise<unknown> {
       const s = SCENE_PARAMS[k];
       return s.type === "number" ? { key: k, type: s.type, min: s.min, max: s.max } : { key: k, type: s.type };
     }),
+    chart_types: [...CHART_TYPES],
     rules: [
       "Use a `patch` action per object you restyle; each MUST include that object's `id`.",
       "Use ONE `layout` action to arrange several objects; put their ids in `ids` and never compute coordinates.",
       "Use `align` with relativeTo:\"slide\" to center on the slide; relativeTo:\"group\" aligns within the selection.",
       "Use an `insertBlock` action to add new content; fill only the slot names listed for that block type.",
       "Use a `sceneParam` action (sceneKey + sceneValue) ONLY to change the moving 3D/canvas background; one action per param.",
+      "Use a `chart` action (id + chartType) to change a selected chart/graph's type; the data is kept, you only pick the type.",
       "If changing text, return plain text with line breaks matching visible text segments when possible.",
       "Do not remove important nested tags; the app maps text lines onto existing text nodes.",
       "If the request is vague, make a minimal tasteful adjustment.",
@@ -253,8 +286,16 @@ function mockActions(prompt: string, contexts: ContextLike[]): AiActionResponse 
   const sceneActions = mockSceneParams(prompt);
   const sceneIntent = sceneActions.length > 0;
 
+  // Chart-type intent: when a chart/graph is the selected object and the prompt
+  // names a type, emit a clean `chart` action (instead of a stray border patch).
+  const chartType = mockChartType(prompt);
+
   // Per-object style/text/animation patches (the original demo logic).
   for (const ctx of contexts) {
+    if (chartType && isChartContext(ctx)) {
+      actions.push({ type: "chart", id: ctx.id as string, chartType });
+      continue;
+    }
     const patch = validatePatch(mockPatchFor(prompt, ctx, !sceneIntent));
     if (Object.keys(patch).length) actions.push({ type: "patch", id: ctx.id as string, patch });
   }
@@ -326,6 +367,29 @@ function mockSceneParams(prompt: string): EditorAction[] {
   else if (has("darker background", "background darker", "배경 어둡", "장면 어둡")) add("brightness", 0.6);
 
   return out;
+}
+
+// Is this selected object a chart? (a <canvas>, or a container holding one).
+function isChartContext(ctx: ContextLike): boolean {
+  const tag = String(ctx?.tag ?? "").toLowerCase();
+  const html = String(ctx?.outerHTML ?? "").toLowerCase();
+  return tag === "canvas" || html.includes("<canvas");
+}
+
+// Deterministic chart-type matching for demo mode (bilingual). Returns the first
+// vetted type named in the prompt, or null.
+function mockChartType(prompt: string): ChartType | null {
+  const p = prompt.toLowerCase();
+  const map: Array<[string[], ChartType]> = [
+    [["bar chart", "bar", "막대", "바 차트", "바차트"], "bar"],
+    [["line chart", "line", "라인", "꺾은", "선 그래프", "선그래프"], "line"],
+    [["doughnut", "donut", "도넛", "도너츠"], "doughnut"],
+    [["pie", "파이", "원형", "원 그래프"], "pie"],
+    [["radar", "레이더", "방사형"], "radar"],
+    [["polararea", "polar area", "polar", "극좌표"], "polarArea"],
+  ];
+  const found = map.find(([kw]) => kw.some((t) => p.includes(t)));
+  return found ? found[1] : null;
 }
 
 // Named colors the demo understands, English + Korean.

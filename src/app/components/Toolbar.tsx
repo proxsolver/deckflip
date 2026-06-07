@@ -37,6 +37,14 @@ const SceneIcon = () => (
   </svg>
 );
 
+// Filmstrip icon for the slide-management panel toggle.
+const SlidesIcon = () => (
+  <svg width={16} height={16} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5}>
+    <rect x="2" y="2.5" width="7.5" height="11" rx="1" />
+    <line x1="11.5" y1="4" x2="14" y2="4" /><line x1="11.5" y1="8" x2="14" y2="8" /><line x1="11.5" y1="12" x2="14" y2="12" />
+  </svg>
+);
+
 export interface ToolbarProps {
   hasDeck: boolean;
   hasSelection: boolean;
@@ -61,10 +69,15 @@ export interface ToolbarProps {
   onApplySceneParam: (op: SceneParamOp) => void;
   onListSceneSections: () => Promise<SceneSectionInfo>;
   onApplySceneAssignment: (op: SceneAssignOp) => void;
+  /** Author + inject a fresh 3D background into a deck that has none. */
+  onAdd3D: () => void | Promise<void>;
   onListBackgroundMotion: () => Promise<BackgroundMotionInfo>;
   onApplyBackgroundMotion: (op: BackgroundMotionOp) => void;
   onPrev: () => void;
   onNext: () => void;
+  /** Toggle the slide-management filmstrip panel. */
+  onToggleSlides: () => void;
+  slidesOpen: boolean;
   onDuplicate: () => void;
   onDelete: () => void;
   onBringFront: () => void;
@@ -186,6 +199,13 @@ export function Toolbar(props: ToolbarProps) {
       sections: prev.sections.map((s) => (s.section === section ? { ...s, sceneName } : s)),
     }));
     props.onApplySceneAssignment({ section, sceneName });
+  };
+
+  // Author + inject a fresh 3D background, then close the panel (the iframe reloads;
+  // the user reopens to find the new scene's tuning controls).
+  const addScene = () => {
+    setSceneOpen(false);
+    void props.onAdd3D();
   };
 
   // Apply a scene-param change live and reflect the new value in the control.
@@ -344,8 +364,16 @@ export function Toolbar(props: ToolbarProps) {
         {sceneOpen && (
           <div className="menu scene-panel">
             <div className="menu-head">Background animation</div>
-            {sceneParams.length === 0 && !bgMotion.available && !sceneSections.available && (
-              <div className="menu-empty">This deck has no adjustable background animation.</div>
+            {/* No deck-provided 3D controller → offer to add one (AI authors it). */}
+            {sceneParams.length === 0 && !sceneSections.available && (
+              <div className="scene-group">
+                {!bgMotion.available && (
+                  <div className="menu-empty">This deck has no 3D background yet.</div>
+                )}
+                <button className="menu-item scene-toggle" onClick={addScene}>
+                  ✦  Add 3D background
+                </button>
+              </div>
             )}
             {/* Per-section 3D scenes (only when the deck exposes the contract). */}
             {sceneSections.available && sceneSections.sections.length > 0 && (
@@ -506,6 +534,15 @@ export function Toolbar(props: ToolbarProps) {
       </button>
 
       <span className="spacer" />
+
+      <button
+        className={`icon-btn${props.slidesOpen ? " is-active" : ""}`}
+        title="Slides panel (insert / reorder slides)"
+        disabled={!hasDeck}
+        onClick={props.onToggleSlides}
+      >
+        <SlidesIcon />
+      </button>
 
       <div className="nav">
         <IconButton title="Previous slide" disabled={!hasDeck} onClick={props.onPrev}><PrevIcon /></IconButton>

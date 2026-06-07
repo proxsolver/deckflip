@@ -124,6 +124,7 @@ export const BLOCK_SELECTOR = [
 // (outside .slide) and are pointer-events:none behind the slides, so they can't
 // be clicked — they're reached only via the background picker (selectById).
 export const BACKGROUND_SELECTOR = [
+  "#three-canvas-container",
   "#bg-layer",
   "#bg-canvas",
   '[id*="bg" i]',

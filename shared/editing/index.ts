@@ -11,6 +11,7 @@
 //   ./animation-presets — curated animation menu (names, keyframes, defaults)
 //   ./blocks            — vetted block template library
 //   ./scene-params      — 3D / background-motion tuning knobs
+//   ./chart             — vetted chart-type menu (Chart.js type switching)
 //
 // Importing "@shared/editing" resolves to this barrel.
 
@@ -21,4 +22,5 @@ export * from "./patch-schema";
 export * from "./animation-presets";
 export * from "./blocks";
 export * from "./scene-params";
+export * from "./chart";
 export * from "./sanitize";

@@ -543,3 +543,35 @@ export function coerceSceneResult(raw: unknown): { threeSceneJs: string; threeDM
     message: asStr(r.message) ?? "Regenerated the 3D background animation.",
   };
 }
+
+// One AI-authored slide inserted between existing ones (Phase 3 slide management).
+// Static only — no <script>/Chart.js (those need wiring the inserter can't do); the
+// editor sanitizes the html before it touches the DOM.
+export const EMIT_SLIDE_TOOL = "emit_slide";
+
+export const EMIT_SLIDE_SCHEMA = {
+  type: "object",
+  properties: {
+    html: {
+      type: "string",
+      description:
+        "ONE complete <section class=\"slide\">…</section> element. Reuse the deck's existing component classes (from the neighbour slides shown). Reveal animations: put class \"anim\" (and anim-2/anim-3 for stagger) on the elements that should fade in. NO <script>, NO <canvas>, NO Chart.js — use inline SVG or CSS for any chart/visual. NO inline on* handlers. Keep it to one screen (100vh).",
+    },
+    title: { type: "string", description: "Short title of the new slide." },
+    message: { type: "string", description: "One short sentence for the user about the inserted slide." },
+  },
+  required: ["html", "title", "message"],
+  additionalProperties: false,
+} as const;
+
+export function coerceSlideResult(raw: unknown): { html: string; title: string; message: string } | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const html = asStr(r.html);
+  if (!html) return null;
+  return {
+    html,
+    title: asStr(r.title) ?? "New slide",
+    message: asStr(r.message) ?? "Inserted a new slide.",
+  };
+}

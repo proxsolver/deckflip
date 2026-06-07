@@ -69,3 +69,10 @@ export interface SlideInfo {
   current: number;
   total: number;
 }
+
+// One entry in the slide-management filmstrip panel (Phase 3). Lightweight: a
+// 0-based index + a title snippet extracted from the slide, no pixel thumbnail.
+export interface SlideSummary {
+  index: number;
+  title: string;
+}

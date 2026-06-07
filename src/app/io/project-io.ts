@@ -4,6 +4,13 @@
 // same-origin srcdoc iframe.
 
 import type { DeckFiles } from "@shared/generation";
+import {
+  IMAGE_SLOT_ATTR,
+  IMAGE_REF_ATTR,
+  IMAGE_INTENT_ATTR,
+  chooseAssetForSlot,
+  type SlotAsset,
+} from "@shared/generation";
 
 export interface LoadedDeck {
   /** Entry HTML rewritten so asset refs point at blob URLs. Feeds iframe srcdoc. */
@@ -72,6 +79,205 @@ function rewriteAssetRefs(html: string, entryName: string, urlForPath: Map<strin
   return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
 }
 
+// Fill the model's reserved image slots ([data-image-slot]) with real <img> tags.
+// The model only reserved space + recorded intent (see shared/generation/image-slots.ts);
+// the APP owns the actual insertion so it controls sizing/object-fit/fallback. Runs
+// BEFORE rewriteAssetRefs so the inserted `assets/...` src is rewritten to a blob URL
+// like any other ref. Idempotent: a slot that already holds an <img> is skipped, so
+// re-loading a persisted/restored deck (whose slots are already filled) is a no-op.
+// Returns the HTML unchanged when there are no slots or no assets.
+function fillImageSlots(html: string, assets: SlotAsset[]): string {
+  if (!assets.length) return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const slots = doc.querySelectorAll<HTMLElement>(`[${IMAGE_SLOT_ATTR}]`);
+  if (!slots.length) return html;
+
+  const used = new Set<string>();
+  let changed = false;
+  slots.forEach((slot) => {
+    if (slot.querySelector("img")) return; // already filled — keep idempotent
+    const intent = slot.getAttribute(IMAGE_INTENT_ATTR) ?? "";
+    const ref = slot.getAttribute(IMAGE_REF_ATTR) ?? "";
+    const path = chooseAssetForSlot(intent, ref, assets, used);
+    if (!path) return;
+    used.add(path.replace(/^\.\//, "").replace(/^\/+/, ""));
+
+    const img = doc.createElement("img");
+    img.setAttribute("src", path);
+    if (intent) img.setAttribute("alt", intent);
+    img.setAttribute("loading", "lazy");
+    img.style.width = "100%";
+    img.style.height = "100%";
+    img.style.objectFit = "cover";
+    img.style.display = "block";
+    slot.appendChild(img);
+    changed = true;
+  });
+
+  return changed ? "<!DOCTYPE html>\n" + doc.documentElement.outerHTML : html;
+}
+
+// The three.js CDN the generation assembler uses (kept in sync with assemble.ts).
+const THREE_CDN = "https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js";
+
+// A minimal, valid starter scene injected by "Add 3D background" — NOT AI-authored.
+// It establishes the canvas + the window.__htmlPptScene controller contract (so the
+// Scene panel sliders work and the AI 3D-mode can regenerate it) and renders a
+// subtle particle field as a neutral starting point. The user selects the layer and
+// uses AI to turn it into whatever animation they want.
+export const DEFAULT_THREE_SCENE_JS = `// Starter 3D background (added by Slidesmith). Edit via the Scene panel or AI 3D mode.
+(function(){
+  if (typeof THREE === 'undefined') return;
+  var canvas = document.getElementById('three-canvas');
+  if (!canvas) return;
+  var state = { spinSpeed: 1, particleOpacity: 0.7, keyLightColor: '#6366f1', fillLightColor: '#a855f7', brightness: 1 };
+  try { var saved = document.getElementById('html-ppt-scene'); if (saved) Object.assign(state, JSON.parse(saved.textContent || '{}')); } catch(e){}
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, alpha: true, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000); camera.position.z = 60;
+  var COUNT = 1100, geo = new THREE.BufferGeometry(), pos = new Float32Array(COUNT*3);
+  for (var i=0;i<COUNT;i++){ pos[i*3]=(Math.random()-0.5)*130; pos[i*3+1]=(Math.random()-0.5)*130; pos[i*3+2]=(Math.random()-0.5)*130; }
+  geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  var mat = new THREE.PointsMaterial({ size: 0.8, color: new THREE.Color(state.keyLightColor), transparent: true, opacity: state.particleOpacity });
+  var points = new THREE.Points(geo, mat); scene.add(points);
+  function resize(){ var w=window.innerWidth,h=window.innerHeight; camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h,false); }
+  window.addEventListener('resize', resize); resize();
+  function persist(){ var s=document.getElementById('html-ppt-scene'); if(!s){ s=document.createElement('script'); s.type='application/json'; s.id='html-ppt-scene'; document.head.appendChild(s);} s.textContent=JSON.stringify(state); }
+  function loop(){ requestAnimationFrame(loop); points.rotation.y += 0.0015*state.spinSpeed; points.rotation.x += 0.0006*state.spinSpeed; mat.opacity=state.particleOpacity; mat.color.set(state.keyLightColor); renderer.toneMappingExposure=state.brightness; renderer.render(scene,camera); }
+  loop(); persist();
+  window.__htmlPptScene = {
+    getParams: function(){ return [
+      {key:'spinSpeed',label:'Spin speed',type:'number',value:state.spinSpeed,min:0,max:3,step:0.1},
+      {key:'particleOpacity',label:'Particle density',type:'number',value:state.particleOpacity,min:0,max:1,step:0.05},
+      {key:'keyLightColor',label:'Key light color',type:'color',value:state.keyLightColor},
+      {key:'fillLightColor',label:'Fill light color',type:'color',value:state.fillLightColor},
+      {key:'brightness',label:'Brightness',type:'number',value:state.brightness,min:0.3,max:2,step:0.05}
+    ]; },
+    setParam: function(k,v){ if(!(k in state)) return false; state[k]=v; persist(); return true; }
+  };
+})();
+`;
+
+// Base CSS for an injected 3D layer. Uses a kept <style id> (no editor marker) so
+// getCleanHtml/export keep it. The canvas sits BEHIND content (z-index:0,
+// pointer-events:none) and the deck content is lifted above it (.presentation
+// z-index:1). The deck's solid base color moves to <body> (behind the canvas), and
+// each .slide is tinted to ~82% of that same base so the scene reads through faintly
+// while text stays legible. Relative-color syntax keeps the tint correct for dark/
+// tech presets too (it derives from the deck's own --bg), with ivory as a fallback;
+// per-slide backgrounds with higher specificity (covers, dividers) still win. If a
+// browser lacks rgb(from …) the .slide rule is dropped and the deck falls back to its
+// original opaque slides (3D hidden) — graceful, never broken.
+const SCENE_INJECT_CSS = `#three-canvas-container{position:fixed;inset:0;z-index:0;pointer-events:none;}
+#three-canvas-container canvas{display:block;width:100%;height:100%;}
+body{background:var(--bg, #FAF8F3);}
+.presentation{position:relative;z-index:1;}
+.slide{background:rgb(from var(--bg, #FAF8F3) r g b / 0.82) !important;}`;
+
+// Keep an already-injected 3D layer's base CSS current. Earlier builds injected a
+// transparent-body-only variant that left opaque .slide backgrounds covering the
+// scene (3D present but invisible). Decks injected then have that stale CSS frozen
+// into their persisted/exported source; this rewrites the kept <style> to the
+// current SCENE_INJECT_CSS on every (re)build, so older decks self-heal on reload.
+// No-op when the deck has no injected 3D layer.
+export function refreshSceneInjectCss(html: string): string {
+  if (!html.includes("html-ppt-scene-inject")) return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const style = doc.getElementById("html-ppt-scene-inject");
+  if (!style || style.textContent === SCENE_INJECT_CSS) return html;
+  style.textContent = SCENE_INJECT_CSS;
+  return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+}
+
+// Shared core: inject the 3D scaffold (container/canvas + CSS + three.js CDN + the
+// scene <script>) into an HTML string. `sceneSrc` is the value for the scene
+// script's src — a relative "three_scene.js" for the persisted source, or a blob
+// URL when injecting straight into an already-rewritten live deck. Idempotent —
+// but still refreshes a stale inject <style> so re-adding/rebuilding upgrades it.
+function scaffoldInto(html: string, sceneSrc: string): string {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  if (doc.getElementById("three-canvas-container")) return refreshSceneInjectCss(html); // already has 3D
+
+  const head = doc.head ?? doc.documentElement;
+  const body = doc.body ?? doc.documentElement;
+
+  if (!doc.getElementById("html-ppt-scene-inject")) {
+    const style = doc.createElement("style");
+    style.id = "html-ppt-scene-inject";
+    style.textContent = SCENE_INJECT_CSS;
+    head.appendChild(style);
+  }
+
+  const container = doc.createElement("div");
+  container.id = "three-canvas-container";
+  const canvas = doc.createElement("canvas");
+  canvas.id = "three-canvas";
+  container.appendChild(canvas);
+  body.insertBefore(container, body.firstChild);
+
+  const hasThree = Array.from(doc.querySelectorAll("script[src]")).some((s) =>
+    /three(@|\.min|\/build\/)/i.test(s.getAttribute("src") || "")
+  );
+  if (!hasThree) {
+    const three = doc.createElement("script");
+    three.setAttribute("src", THREE_CDN);
+    body.appendChild(three);
+  }
+
+  if (!Array.from(doc.querySelectorAll("script[src]")).some((s) => /three_scene\.js/i.test(s.getAttribute("src") || "") || s.getAttribute("src") === sceneSrc)) {
+    const scene = doc.createElement("script");
+    scene.setAttribute("src", sceneSrc);
+    body.appendChild(scene);
+  }
+
+  return "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+}
+
+/**
+ * Inject the 3D scaffold into the RELATIVE index.html (scene src = "three_scene.js").
+ * Used for the PERSISTED source of an AI deck; the caller sets DeckFiles.threeSceneJs
+ * and rebuilds via buildDeckFromContents (which blob-wires + rewrites the ref).
+ */
+export function injectThreeScaffold(html: string): string {
+  return scaffoldInto(html, "three_scene.js");
+}
+
+/**
+ * Add a 3D layer to a LIVE deck (works for AI AND disk-loaded decks). Registers
+ * three_scene.js as a new blob asset and injects the scaffold straight into the
+ * deck's already-rewritten HTML (scene <script> points at the blob). Returns a new
+ * LoadedDeck whose `html` reloaded into the iframe runs the scene + exposes
+ * window.__htmlPptScene, so the layer is selectable + AI-editable. No-op (returns
+ * the same deck) if a #three-canvas-container already exists.
+ */
+export function addThreeSceneToDeck(deck: LoadedDeck, sceneJs: string): LoadedDeck {
+  if (/three-canvas-container/.test(deck.html) || deck.files.has("three_scene.js")) return deck;
+
+  const file = new File([sceneJs], "three_scene.js", { type: "text/javascript" });
+  const url = URL.createObjectURL(file);
+  const files = new Map(deck.files);
+  files.set("three_scene.js", file);
+  const pathForUrl = new Map(deck.pathForUrl);
+  pathForUrl.set(url, "three_scene.js");
+  const objectUrls = [...deck.objectUrls, url];
+  const html = scaffoldInto(deck.html, url);
+
+  return { ...deck, files, pathForUrl, objectUrls, html };
+}
+
+// Available photos for slot-filling, derived from a normalized file map (disk decks):
+// every asset under assets/ becomes a SlotAsset whose caption is its filename.
+function slotAssetsFromFileMap(files: Map<string, File>): SlotAsset[] {
+  const out: SlotAsset[] = [];
+  for (const path of files.keys()) {
+    if (/^assets\//i.test(path) && /\.(png|jpe?g|gif|webp|svg|avif)$/i.test(path)) {
+      out.push({ path, caption: path.split("/").pop() || path });
+    }
+  }
+  return out;
+}
+
 export async function openDeckViaPicker(): Promise<LoadedDeck> {
   if (!window.showDirectoryPicker) {
     throw new Error("This browser does not support the directory picker. Use the folder <input> fallback.");
@@ -108,8 +314,9 @@ async function buildDeckAsync(files: Map<string, File>, dirHandle?: FileSystemDi
     urlForPath.set(path, url);
     pathForUrl.set(url, path);
   }
-  const rawHtml = await files.get(entryName)!.text();
-  const html = rewriteAssetRefs(rawHtml, entryName, urlForPath);
+  const rawHtml = refreshSceneInjectCss(await files.get(entryName)!.text());
+  const filled = fillImageSlots(rawHtml, slotAssetsFromFileMap(files));
+  const html = rewriteAssetRefs(filled, entryName, urlForPath);
   return { html, entryName, files, dirHandle, objectUrls, pathForUrl };
 }
 
@@ -158,7 +365,12 @@ export function buildDeckFromContents(files: DeckFiles): LoadedDeck {
     pathForUrl.set(url, path);
   }
 
-  const html = rewriteAssetRefs(files.indexHtml, "index.html", urlForPath);
+  const slotAssets: SlotAsset[] = (files.assets ?? []).map((a) => ({
+    path: a.path,
+    caption: a.caption,
+  }));
+  const filled = fillImageSlots(refreshSceneInjectCss(files.indexHtml), slotAssets);
+  const html = rewriteAssetRefs(filled, "index.html", urlForPath);
   return { html, entryName: "index.html", files: fileMap, objectUrls, pathForUrl };
 }
 

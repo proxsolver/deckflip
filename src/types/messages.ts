@@ -8,9 +8,20 @@
 import type { Patch, PatchOp } from "@shared/editing";
 import type { EditorAction, LayoutOp, BlockSpec, SceneParamOp } from "@shared/editing";
 import type { SceneParamInfo, BackgroundMotionInfo, BackgroundMotionOp, SceneSectionInfo, SceneAssignOp } from "@shared/editing";
-import type { SelectionPayload, SelectedContext, SlideInfo, BackgroundLayer } from "./context";
+import type { SelectionPayload, SelectedContext, SlideInfo, SlideSummary, BackgroundLayer } from "./context";
 
 export type EditorTool = "select" | "text" | "rect";
+
+// Insert a new slide relative to an existing one (Phase 3 slide management).
+//   blank     — a minimal centered .slide with editable placeholder text
+//   duplicate — a clean clone of slide #index
+//   html      — AI-authored markup (sanitized in the editor before insertion)
+export interface InsertSlideSpec {
+  index: number;
+  position: "before" | "after";
+  kind: "blank" | "duplicate" | "html";
+  html?: string;
+}
 
 // Manual image insertion (Toolbar → upload/URL). The src is an inlined data URL
 // (uploads) or an external URL (paste). Editor-side only — not an AI action.
@@ -33,6 +44,7 @@ export type EditorMethod =
   | "deleteSelected"
   | "deselect"
   | "selectById"
+  | "select3DLayer"
   | "listBackgroundLayers"
   | "listSceneParams"
   | "applySceneParam"
@@ -52,6 +64,10 @@ export type EditorMethod =
   | "prevSlide"
   | "nextSlide"
   | "goToSlide"
+  | "listSlides"
+  | "insertSlide"
+  | "deleteSlide"
+  | "moveSlide"
   | "getCleanHtml"
   | "getSelectedContext"
   | "getSelectionContexts"
@@ -102,6 +118,8 @@ export interface EditorCalls {
   deleteSelected(): Promise<void>;
   deselect(): Promise<void>;
   selectById(id: string): Promise<void>;
+  /** Select the 3D background layer directly (resolves false if the deck has none). */
+  select3DLayer(): Promise<boolean>;
   listBackgroundLayers(): Promise<BackgroundLayer[]>;
   listSceneParams(): Promise<SceneParamInfo[]>;
   applySceneParam(op: SceneParamOp): Promise<void>;
@@ -121,6 +139,11 @@ export interface EditorCalls {
   prevSlide(): Promise<void>;
   nextSlide(): Promise<void>;
   goToSlide(n: number): Promise<void>;
+  listSlides(): Promise<SlideSummary[]>;
+  /** Insert a slide; resolves to the new slide's 0-based index (or -1 on failure). */
+  insertSlide(spec: InsertSlideSpec): Promise<number>;
+  deleteSlide(index: number): Promise<boolean>;
+  moveSlide(from: number, to: number): Promise<boolean>;
   getCleanHtml(): Promise<string>;
   getSelectedContext(): Promise<SelectedContext | null>;
   getSelectionContexts(): Promise<SelectedContext[]>;

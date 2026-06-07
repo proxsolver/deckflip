@@ -7,6 +7,7 @@ import { ANIMATION_NONE, ANIMATION_PRESETS, ANIMATION_TIMING_FUNCTIONS } from ".
 import { LAYOUT_VERBS, LAYOUT_AXES } from "./actions";
 import { BLOCK_TYPES } from "./blocks";
 import { SCENE_PARAM_KEYS } from "./scene-params";
+import { CHART_TYPES } from "./chart";
 
 type JsonSchema = Record<string, unknown>;
 
@@ -88,7 +89,7 @@ const ACTION_SCHEMA: JsonSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    type: { type: "string", enum: ["patch", "layout", "insertBlock", "sceneParam"] },
+    type: { type: "string", enum: ["patch", "layout", "insertBlock", "sceneParam", "chart"] },
     // patch action
     id: nullable("string"),
     patch: PATCH_OBJECT_SCHEMA,
@@ -120,6 +121,8 @@ const ACTION_SCHEMA: JsonSchema = {
     // sceneParam action: tune the 3D / canvas background animation.
     sceneKey: nullableEnum(SCENE_PARAM_KEYS),
     sceneValue: nullable(["number", "string"]),
+    // chart action: change a Chart.js chart's type (reuses `id` for the target).
+    chartType: nullableEnum(CHART_TYPES),
   },
   required: [
     "type",
@@ -137,6 +140,7 @@ const ACTION_SCHEMA: JsonSchema = {
     "target",
     "sceneKey",
     "sceneValue",
+    "chartType",
   ],
 };
 

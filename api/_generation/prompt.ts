@@ -132,7 +132,7 @@ export const GENERATION_CONTRACT = `
 6. **인쇄/Headless**: 위 §인쇄 규칙(initAll, HeadlessChrome 1프레임, beforeprint, @media print, @page 1920×1080).
 
 ### 자산 규칙
-업로드 이미지는 \`<img src="data:...">\` data URL로 인라인. 외부 http 이미지 URL이나 존재하지 않는 로컬 경로 참조 금지(에디터가 못 푼다). 이미지가 없으면 CSS 그라데이션·도형·SVG로 비주얼을 만든다.
+업로드 이미지는 **직접 \`<img>\`로 넣지 마라.** 이미지가 들어갈 자리에는 빈 슬롯만 둔다: \`<figure data-image-slot data-image-ref="assets/img-N.ext" data-image-intent="짧은 설명"></figure>\` — 실제 \`<img>\` 삽입은 앱이 처리한다(아래 "사용 가능한 이미지" 목록의 경로만 \`data-image-ref\`로 쓸 것). 슬롯에는 자리 크기/비율(aspect-ratio·width)과 플레이스홀더 배경만 CSS로 잡아라. 외부 http 이미지 URL이나 목록에 없는 경로 참조 금지(에디터가 못 푼다). 이미지가 없으면 CSS 그라데이션·도형·SVG로 비주얼을 만든다.
 
 ### 언어
 designBrief.language와 사용자 language 설정을 따른다. 기본은 한국어. 모든 슬라이드 텍스트는 해당 언어로.`;

@@ -66,9 +66,18 @@ export async function requestAiActions(
     return { actions: [], message: data.message || "Prompt-export mode.", mock: !!data.mock, editExport: data.editExport };
   }
 
-  const actions = validateActions({ actions: data.actions }, ids);
+  const serverActions = Array.isArray(data.actions) ? data.actions : [];
+  const actions = validateActions({ actions: serverActions }, ids);
   if (actions.length === 0) {
-    throw new Error("AI returned no valid changes after validation.");
+    // Two distinct cases. (a) The server itself returned no actions — an
+    // unsupported request (e.g. changing a chart type) it already explained in
+    // `message`; surface that, not an error. (b) The server SENT actions but they
+    // all failed re-validation here (defense-in-depth divergence) — that's a real
+    // rejection, so flag it.
+    if (serverActions.length > 0) {
+      throw new Error("AI returned no valid changes after validation.");
+    }
+    return { actions: [], message: data.message || "No changes were applicable.", mock: !!data.mock };
   }
   return { actions, message: data.message || "AI changes applied.", mock: !!data.mock };
 }

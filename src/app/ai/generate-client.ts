@@ -10,6 +10,8 @@ import {
   type DeckAsset,
   type RegenerateSceneRequest,
   type RegenerateSceneResponse,
+  type GenerateSlideRequest,
+  type GenerateSlideResponse,
   type GenerateCandidatesRequest,
   type GenerateCandidatesResponse,
   type PersonaInterviewRequest,
@@ -186,6 +188,33 @@ export async function requestSceneRegen(
     threeSceneJs: data.threeSceneJs,
     threeDMotif: data.threeDMotif || "custom 3D background",
     message: data.message || "Regenerated the 3D background animation.",
+    usage: data.usage,
+    mock: !!data.mock,
+  };
+}
+
+// Author ONE new slide to insert between existing ones (Phase 3 slide management).
+export async function requestSlide(
+  prompt: string,
+  brief: DesignBrief | undefined,
+  neighborHtml: string | undefined,
+  position?: { afterIndex?: number; total?: number }
+): Promise<GenerateSlideResponse> {
+  const req: GenerateSlideRequest = { prompt, brief, neighborHtml, position };
+  const resp = await fetch("/api/generate-slide", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  const data = (await resp.json().catch(() => ({}))) as Partial<GenerateSlideResponse> & { error?: string };
+  if (!resp.ok || data.error) {
+    throw new Error(data.error || `Slide generation failed (${resp.status}).`);
+  }
+  if (!data.html) throw new Error("Slide generation returned no HTML.");
+  return {
+    html: data.html,
+    title: data.title || "New slide",
+    message: data.message || "Inserted a new slide.",
     usage: data.usage,
     mock: !!data.mock,
   };

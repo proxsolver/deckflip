@@ -251,7 +251,7 @@ export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend
         <div ref={endRef} />
       </div>
 
-      <div className="ai-input">
+      <div className="ai-modes" role="group" aria-label="Edit mode">
         <button
           className={`ai-mode${imageMode ? " active" : ""}`}
           title={imageMode ? "Web images: ON — prompts find & paste real photos into the selected object(s)" : "Switch to web image search"}
@@ -259,7 +259,7 @@ export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend
           disabled={busy || !threadKey}
           onClick={() => { setImageMode((v) => !v); setSceneMode(false); setRebuildMode(false); }}
         >
-          <ImageIcon />
+          <ImageIcon /> <span>Image</span>
         </button>
         <button
           className={`ai-mode${rebuildMode ? " active" : ""}`}
@@ -268,7 +268,7 @@ export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend
           disabled={busy || !threadKey}
           onClick={() => { setRebuildMode((v) => !v); setImageMode(false); setSceneMode(false); }}
         >
-          <WandIcon />
+          <WandIcon /> <span>Rebuild</span>
         </button>
         <button
           className={`ai-mode${sceneMode ? " active" : ""}`}
@@ -277,8 +277,11 @@ export function AiChat({ subtitle, onClose, runAi, threadKey, messages, onAppend
           disabled={busy || !threadKey}
           onClick={() => { setSceneMode((v) => !v); setImageMode(false); setRebuildMode(false); }}
         >
-          <CubeIcon />
+          <CubeIcon /> <span>3D</span>
         </button>
+      </div>
+
+      <div className="ai-input">
         <textarea
           autoFocus
           rows={1}

@@ -8,6 +8,7 @@
 import type { Patch } from "./patch-keys";
 import type { BlockType } from "./blocks";
 import type { SceneParamKey } from "./scene-params";
+import type { ChartType } from "./chart";
 
 // --- Layout verbs ---------------------------------------------------------
 
@@ -92,13 +93,26 @@ export interface SceneParamOp {
   value: number | string;
 }
 
+// --- Chart type -----------------------------------------------------------
+
+// Change a Chart.js chart's TYPE. Targets the selected chart element by `id` (the
+// <canvas>, or a container holding one). The editor recreates the live chart
+// instance with the new type, preserving its data + styling. No deck contract —
+// it uses the deck's standard window.Chart global. The editor emits/computes
+// nothing beyond this {id, chartType} pair.
+export interface ChartOp {
+  id: string;
+  chartType: ChartType;
+}
+
 // --- The envelope ---------------------------------------------------------
 
 export type EditorAction =
   | ({ type: "patch"; id: string; patch: Patch })
   | ({ type: "layout" } & LayoutOp)
   | ({ type: "insertBlock" } & BlockSpec)
-  | ({ type: "sceneParam" } & SceneParamOp);
+  | ({ type: "sceneParam" } & SceneParamOp)
+  | ({ type: "chart" } & ChartOp);
 
 export interface ActionEnvelope {
   message: string;
