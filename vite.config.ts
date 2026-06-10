@@ -19,6 +19,7 @@ import {
   validateAiEditRequest,
   isBodySizeOk,
 } from "./api/input-validator";
+import { initSentry, captureException } from "./api/sentry";
 
 // Dev-only middleware so `npm run dev` serves the AI endpoints without a separate
 // serverless host. In production the same logic ships as api/ai-edit.ts and
@@ -69,6 +70,7 @@ function jsonPost(
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify(result));
       } catch (err) {
+        captureException(err);
         res.statusCode = 400;
         res.end(JSON.stringify({ error: String((err as Error)?.message ?? err) }));
       }
@@ -80,6 +82,7 @@ function aiDevApi(): Plugin {
   return {
     name: "ai-dev-api",
     configureServer(server: ViteDevServer) {
+      initSentry();
       jsonPost(server, "/api/ai-edit", (p) => handleAiEdit(p as Parameters<typeof handleAiEdit>[0]), { validate: validateAiEditRequest });
       jsonPost(server, "/api/ai-edit-element", (p) => handleAiEditElement(p as Parameters<typeof handleAiEditElement>[0]));
       jsonPost(server, "/api/ai-image", (p) => handleAiImage(p as Parameters<typeof handleAiImage>[0]));
