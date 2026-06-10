@@ -13,14 +13,21 @@ import { handleParseUpload } from "./api/_generation/parse";
 import { handleGenerateCandidates } from "./api/_generation/candidates";
 import { handlePersonaInterview } from "./api/_generation/persona";
 import { handleDeckPrompts } from "./api/_generation/prompt-log";
+import { rateLimitGuard } from "./api/rate-limit";
+import {
+  validateGenerateRequest,
+  validateAiEditRequest,
+  isBodySizeOk,
+} from "./api/input-validator";
 
 // Dev-only middleware so `npm run dev` serves the AI endpoints without a separate
 // serverless host. In production the same logic ships as api/ai-edit.ts and
-// api/ai-image.ts.
+// api/ai-image.ts. Rate limiting and input validation run before the handler.
 function jsonPost(
   server: ViteDevServer,
   path: string,
-  handler: (payload: unknown) => Promise<unknown>
+  handler: (payload: unknown) => Promise<unknown>,
+  options?: { validate?: (body: unknown) => { valid: boolean; errors: Array<{ field: string; message: string }> } }
 ): void {
   server.middlewares.use(path, (req: IncomingMessage, res: ServerResponse) => {
     if (req.method !== "POST") {
@@ -28,11 +35,37 @@ function jsonPost(
       res.end("Method Not Allowed");
       return;
     }
+
+    // 1) Rate limit check — reject before reading the body.
+    if (!rateLimitGuard(req, res, path)) return;
+
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", async () => {
       try {
-        const result = await handler(JSON.parse(body || "{}"));
+        // 2) Payload size check.
+        if (!isBodySizeOk(body)) {
+          res.statusCode = 413;
+          res.setHeader("Content-Type", "application/json");
+          res.end(JSON.stringify({ error: "요청 크기가 너무 큽니다. (최대 20MB)" }));
+          return;
+        }
+
+        const parsed = JSON.parse(body || "{}");
+
+        // 3) Input validation (if a validator is registered for this route).
+        if (options?.validate) {
+          const result = options.validate(parsed);
+          if (!result.valid) {
+            res.statusCode = 422;
+            res.setHeader("Content-Type", "application/json");
+            res.end(JSON.stringify({ error: "입력값이 올바르지 않습니다.", details: result.errors }));
+            return;
+          }
+        }
+
+        // 4) Execute the actual handler.
+        const result = await handler(parsed);
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify(result));
       } catch (err) {
@@ -47,14 +80,12 @@ function aiDevApi(): Plugin {
   return {
     name: "ai-dev-api",
     configureServer(server: ViteDevServer) {
-      jsonPost(server, "/api/ai-edit", (p) => handleAiEdit(p as Parameters<typeof handleAiEdit>[0]));
+      jsonPost(server, "/api/ai-edit", (p) => handleAiEdit(p as Parameters<typeof handleAiEdit>[0]), { validate: validateAiEditRequest });
       jsonPost(server, "/api/ai-edit-element", (p) => handleAiEditElement(p as Parameters<typeof handleAiEditElement>[0]));
       jsonPost(server, "/api/ai-image", (p) => handleAiImage(p as Parameters<typeof handleAiImage>[0]));
       jsonPost(server, "/api/ai-image-search", (p) => handleAiImageSearch(p as Parameters<typeof handleAiImageSearch>[0]));
-      // Deck generation runs in Node here, so it can write generated/<id>/ via
-      // the local-dir backend (api/storage.ts). Editing api/_generate.ts needs a
-      // dev-server restart (the handler is imported at startup, like the others).
-      jsonPost(server, "/api/generate", (p) => handleGenerate(p as Parameters<typeof handleGenerate>[0]));
+      // Deck generation is the most expensive endpoint — full validation.
+      jsonPost(server, "/api/generate", (p) => handleGenerate(p as Parameters<typeof handleGenerate>[0]), { validate: validateGenerateRequest });
       jsonPost(server, "/api/load-generated", (p) => handleLoadGenerated(p as Parameters<typeof handleLoadGenerated>[0]));
       jsonPost(server, "/api/regenerate-scene", (p) => handleRegenerateScene(p as Parameters<typeof handleRegenerateScene>[0]));
       jsonPost(server, "/api/generate-slide", (p) => handleGenerateSlide(p as Parameters<typeof handleGenerateSlide>[0]));
@@ -79,6 +110,9 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react(), aiDevApi()],
+    server: {
+      allowedHosts: ["qas.deckflip.net", ".deckflip.net", "localhost", "127.0.0.1"],
+    },
     resolve: {
       alias: {
         "@shared": resolve(__dirname, "shared"),
