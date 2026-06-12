@@ -12,6 +12,7 @@
     "typecheck": "tsc"
   },
   "dependencies": {
+    "@sentry/node": "^10.57.0",
     "mammoth": "^1.12.0",
     "pdfjs-dist": "^6.0.227",
     "react": "^18.3.1",

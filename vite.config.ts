@@ -69,6 +69,7 @@ function jsonPost(
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify(result));
       } catch (err) {
+        captureException(err);
         res.statusCode = 400;
         res.end(JSON.stringify({ error: String((err as Error)?.message ?? err) }));
       }
